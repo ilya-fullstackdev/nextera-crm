@@ -1,0 +1,335 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OPERATOR
+  MANAGER
+  DIRECTOR
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+}
+
+enum LeadStatus {
+  NEW
+  SEARCHING_DM
+  FIRST_CONTACT
+  DM_FOUND
+  QUALIFICATION
+  HANDED_TO_MANAGER
+  NEGOTIATION
+  PROPOSAL_SENT
+  DEAL
+  REJECTED
+  CALLBACK_LATER
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum LeadSource {
+  YANDEX_MAPS
+  GOOGLE_MAPS
+  INSTAGRAM
+  TIKTOK
+  TELEGRAM
+  WEBSITE
+  REFERRAL
+  MANUAL_SEARCH
+  OTHER
+}
+
+enum ActivityType {
+  CALL
+  MESSAGE
+  EMAIL
+  MEETING
+  NOTE
+  STATUS_CHANGE
+  HANDOVER
+  FILE
+  REJECTION
+}
+
+enum TaskType {
+  CALL
+  MEETING
+  EMAIL
+  FOLLOW_UP
+  OTHER
+}
+
+enum TaskStatus {
+  PENDING
+  DONE
+  CANCELLED
+}
+
+enum NeedLevel {
+  NONE
+  POTENTIAL
+  CONFIRMED
+}
+
+enum DecisionMakerStatus {
+  NOT_FOUND
+  FOUND
+  PARTICIPATES
+  MULTIPLE
+}
+
+enum DealTimeline {
+  NOW
+  ONE_TO_THREE_MONTHS
+  THREE_TO_SIX_MONTHS
+  UNDEFINED
+}
+
+enum BudgetStatus {
+  UNKNOWN
+  ESTIMATE
+  DEFINED
+  NONE
+}
+
+enum InterestLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum RejectionReason {
+  NO_NEED
+  HAS_CONTRACTOR
+  RECENT_WEBSITE
+  RECENT_REDESIGN
+  EXPENSIVE
+  NO_BUDGET
+  NOT_NOW
+  CHOSE_OTHER
+  CANT_REACH_DM
+  OTHER
+}
+
+model User {
+  id           String     @id @default(cuid())
+  firstName    String
+  lastName     String
+  login        String     @unique
+  passwordHash String
+  role         Role       @default(OPERATOR)
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  lastLoginAt  DateTime?
+  deletedAt    DateTime?
+
+  leadsOwned     Lead[]         @relation("LeadOwner")
+  leadsCreated   Lead[]         @relation("LeadCreator")
+  activities     LeadActivity[]
+  tasksAssigned  Task[]         @relation("TaskAssignee")
+  tasksCreated   Task[]         @relation("TaskCreator")
+  auditLogs      AuditLog[]
+  files          LeadFile[]
+  handoversFrom  LeadHandover[] @relation("HandoverFrom")
+  handoversTo    LeadHandover[] @relation("HandoverTo")
+
+  @@index([status])
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  niche     String?
+  city      String?
+  website   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contacts Contact[]
+  leads    Lead[]
+
+  @@index([name])
+  @@index([website])
+}
+
+model Contact {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
+  firstName       String
+  lastName        String?
+  position        String?
+  phone           String?
+  telegram        String?
+  email           String?
+  isDecisionMaker Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  leads             Lead[]  @relation("LeadPrimaryContact")
+  decisionMakerLeads Lead[] @relation("LeadDecisionMakers")
+
+  @@index([companyId])
+  @@index([phone])
+}
+
+model Lead {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  contactId String?
+  contact   Contact? @relation("LeadPrimaryContact", fields: [contactId], references: [id])
+
+  status   LeadStatus @default(NEW)
+  priority Priority   @default(MEDIUM)
+  source   LeadSource @default(OTHER)
+
+  ownerId     String
+  owner       User   @relation("LeadOwner", fields: [ownerId], references: [id])
+  createdById String
+  createdBy   User   @relation("LeadCreator", fields: [createdById], references: [id])
+
+  dmStatus          DecisionMakerStatus @default(NOT_FOUND)
+  needLevel         NeedLevel           @default(NONE)
+  needDescription   String?
+  currentWebsite    String?
+  problem           String?
+  desiredResult     String?
+  timeline          DealTimeline        @default(UNDEFINED)
+  budgetStatus      BudgetStatus        @default(UNKNOWN)
+  budgetComment     String?
+  currentContractor String?
+  interestLevel     InterestLevel?
+
+  nextContactAt   DateTime?
+  contactAttempts Int       @default(0)
+
+  rejectionReason  RejectionReason?
+  rejectionComment String?
+
+  handedToManagerAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  decisionMakers Contact[]      @relation("LeadDecisionMakers")
+  activities     LeadActivity[]
+  tasks          Task[]
+  files          LeadFile[]
+  handovers      LeadHandover[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([companyId])
+  @@index([priority])
+  @@index([nextContactAt])
+}
+
+model LeadActivity {
+  id       String       @id @default(cuid())
+  leadId   String
+  lead     Lead         @relation(fields: [leadId], references: [id])
+  userId   String
+  user     User         @relation(fields: [userId], references: [id])
+  type     ActivityType
+  comment  String?
+  metadata Json?
+  createdAt DateTime    @default(now())
+
+  @@index([leadId])
+  @@index([createdAt])
+}
+
+model Task {
+  id     String   @id @default(cuid())
+  leadId String?
+  lead   Lead?    @relation(fields: [leadId], references: [id])
+  title  String
+  type   TaskType @default(OTHER)
+  dueAt  DateTime
+  comment String?
+  status TaskStatus @default(PENDING)
+
+  assigneeId  String
+  assignee    User   @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdById String
+  createdBy   User   @relation("TaskCreator", fields: [createdById], references: [id])
+
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([assigneeId])
+  @@index([dueAt])
+  @@index([status])
+}
+
+model LeadFile {
+  id           String   @id @default(cuid())
+  leadId       String
+  lead         Lead     @relation(fields: [leadId], references: [id])
+  fileName     String
+  category     String?
+  storagePath  String
+  size         Int
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([leadId])
+}
+
+model LeadHandover {
+  id     String @id @default(cuid())
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id])
+
+  fromUserId String
+  fromUser   User   @relation("HandoverFrom", fields: [fromUserId], references: [id])
+  toUserId   String
+  toUser     User   @relation("HandoverTo", fields: [toUserId], references: [id])
+
+  dmInfo        String?
+  needSummary   String?
+  situation     String?
+  problem       String?
+  desiredResult String?
+  timeline      String?
+  budget        String?
+  discussed     String?
+  objections    String?
+  nextStep      String?
+
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  actorName  String
+  action     String
+  entityType String
+  entityId   String?
+  oldValue   Json?
+  newValue   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
