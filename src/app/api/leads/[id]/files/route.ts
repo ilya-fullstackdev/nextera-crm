@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { prisma } from "@/lib/prisma";
-import { requireApiUser, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiLeadsAccess, ApiAuthError } from "@/lib/auth/guards";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = await requireApiUser();
+    const actor = await requireApiLeadsAccess();
     const { id } = await params;
     const lead = await prisma.lead.findUnique({ where: { id } });
     if (!lead) {

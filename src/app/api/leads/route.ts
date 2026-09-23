@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireApiUser, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiLeadsAccess, ApiAuthError } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
+import { revalidateCrm } from "@/lib/revalidate";
 import { findDuplicateLeads } from "@/lib/duplicates";
 
 const createSchema = z.object({
@@ -33,7 +34,7 @@ const createSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const actor = await requireApiUser();
+    const actor = await requireApiLeadsAccess();
     const body = await request.json().catch(() => null);
     const parsed = createSchema.safeParse(body);
     if (!parsed.success) {
@@ -126,14 +127,16 @@ export async function POST(request: Request) {
       },
     });
 
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 1);
+    // Задача ставится сама на того, кто завёл лид, и сразу на сегодня.
+    const dueToday = new Date();
+    dueToday.setHours(18, 0, 0, 0);
     await prisma.task.create({
       data: {
         leadId: lead.id,
-        title: "Первый контакт",
+        title: `Позвонить: ${company.name}`,
         type: "CALL",
-        dueAt: dueDate,
+        dueAt: dueToday,
+        comment: contact?.phone ? `Телефон: ${contact.phone}` : undefined,
         assigneeId: actor.id,
         createdById: actor.id,
       },
@@ -147,6 +150,7 @@ export async function POST(request: Request) {
       newValue: { company: company.name },
     });
 
+    revalidateCrm();
     return NextResponse.json({ lead: { id: lead.id } });
   } catch (error) {
     if (error instanceof ApiAuthError) {

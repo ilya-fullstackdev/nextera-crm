@@ -12,7 +12,8 @@ import { Dropdown } from "@/components/ui/dropdown";
 import type { ContextMenuItem } from "@/components/ui/context-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
-import { ROLE_LABELS, USER_STATUS_LABELS } from "@/lib/labels";
+import { ROLE_LABELS, ROLE_TONE, USER_STATUS_LABELS } from "@/lib/labels";
+import { canManageRole } from "@/lib/permissions";
 import { formatDate, formatDateTime } from "@/lib/format";
 import type { Role, UserStatus } from "@/generated/prisma/enums";
 import { EmployeeFormModal } from "@/components/employees/employee-form-modal";
@@ -26,6 +27,8 @@ export interface EmployeeRow {
   login: string;
   role: Role;
   status: UserStatus;
+  hiredById: string | null;
+  hiredByName: string | null;
   createdAt: string;
   lastLoginAt: string | null;
   activeLeads: number;
@@ -35,9 +38,13 @@ export interface EmployeeRow {
 export function EmployeesClient({
   initialEmployees,
   currentUserId,
+  actorRole,
+  showLeadStats,
 }: {
   initialEmployees: EmployeeRow[];
   currentUserId: string;
+  actorRole: Role;
+  showLeadStats: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -73,25 +80,52 @@ export function EmployeesClient({
   }
 
   function buildActions(e: EmployeeRow): ContextMenuItem[] {
+    // Кадровик управляет только отделом холодных звонков.
+    const manageable = canManageRole(actorRole, e.role);
     return [
-      { label: "Редактировать", icon: <Pencil />, onClick: () => setFormState({ open: true, employee: e }) },
+      {
+        label: "Редактировать",
+        icon: <Pencil />,
+        onClick: () => setFormState({ open: true, employee: e }),
+        disabled: !manageable,
+      },
       { label: "Копировать логин", icon: <Copy />, onClick: () => copyLogin(e) },
       {
         label: e.status === "ACTIVE" ? "Заблокировать" : "Активировать",
         icon: e.status === "ACTIVE" ? <Lock /> : <Unlock />,
         onClick: () => toggleStatus(e),
-        disabled: e.id === currentUserId,
+        disabled: e.id === currentUserId || !manageable,
       },
-      { label: "Сбросить пароль", icon: <KeyRound />, onClick: () => setResetTarget(e) },
+      {
+        label: "Сбросить пароль",
+        icon: <KeyRound />,
+        onClick: () => setResetTarget(e),
+        disabled: !manageable,
+      },
       {
         label: "Удалить",
         icon: <Trash2 />,
         danger: true,
         onClick: () => setDeleteTarget(e),
-        disabled: e.id === currentUserId,
+        disabled: e.id === currentUserId || !manageable,
       },
     ];
   }
+
+  const leadColumns: Column<EmployeeRow>[] = showLeadStats
+    ? [
+        {
+          key: "activeLeads",
+          header: "Активные лиды",
+          render: (e) => <span className="tabular-nums">{e.activeLeads}</span>,
+        },
+        {
+          key: "handedOverLeads",
+          header: "Переданные лиды",
+          render: (e) => <span className="tabular-nums">{e.handedOverLeads}</span>,
+        },
+      ]
+    : [];
 
   const columns: Column<EmployeeRow>[] = [
     {
@@ -112,7 +146,7 @@ export function EmployeesClient({
     {
       key: "role",
       header: "Роль",
-      render: (e) => <Badge tone="primary">{ROLE_LABELS[e.role]}</Badge>,
+      render: (e) => <Badge tone={ROLE_TONE[e.role]}>{ROLE_LABELS[e.role]}</Badge>,
     },
     {
       key: "status",
@@ -122,6 +156,11 @@ export function EmployeesClient({
           {USER_STATUS_LABELS[e.status]}
         </Badge>
       ),
+    },
+    {
+      key: "hiredBy",
+      header: "Кто привёл",
+      render: (e) => <span className="text-text-secondary">{e.hiredByName ?? "—"}</span>,
     },
     {
       key: "createdAt",
@@ -137,16 +176,7 @@ export function EmployeesClient({
         </span>
       ),
     },
-    {
-      key: "activeLeads",
-      header: "Активные лиды",
-      render: (e) => <span className="tabular-nums">{e.activeLeads}</span>,
-    },
-    {
-      key: "handedOverLeads",
-      header: "Переданные лиды",
-      render: (e) => <span className="tabular-nums">{e.handedOverLeads}</span>,
-    },
+    ...leadColumns,
     {
       key: "actions",
       header: "",
@@ -229,16 +259,22 @@ export function EmployeesClient({
               </div>
 
               <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                <Badge tone="primary">{ROLE_LABELS[e.role]}</Badge>
+                <Badge tone={ROLE_TONE[e.role]}>{ROLE_LABELS[e.role]}</Badge>
                 <Badge tone={e.status === "ACTIVE" ? "success" : "danger"} dot>
                   {USER_STATUS_LABELS[e.status]}
                 </Badge>
               </div>
 
-              <div className="mt-3 flex items-center justify-between border-t border-border-subtle pt-2.5 text-[12px] text-text-tertiary">
-                <span>Активных лидов: {e.activeLeads}</span>
-                <span>Передано: {e.handedOverLeads}</span>
-              </div>
+              {showLeadStats ? (
+                <div className="mt-3 flex items-center justify-between border-t border-border-subtle pt-2.5 text-[12px] text-text-tertiary">
+                  <span>Активных лидов: {e.activeLeads}</span>
+                  <span>Передано: {e.handedOverLeads}</span>
+                </div>
+              ) : (
+                <div className="mt-3 border-t border-border-subtle pt-2.5 text-[12px] text-text-tertiary">
+                  Последний вход: {e.lastLoginAt ? formatDateTime(e.lastLoginAt) : "ещё не входил"}
+                </div>
+              )}
             </div>
           ))
         )}
@@ -247,6 +283,7 @@ export function EmployeesClient({
       <EmployeeFormModal
         open={formState.open}
         employee={formState.employee}
+        actorRole={actorRole}
         onClose={() => setFormState({ open: false, employee: null })}
         onSuccess={() => {
           setFormState({ open: false, employee: null });

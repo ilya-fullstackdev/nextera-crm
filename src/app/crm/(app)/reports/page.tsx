@@ -4,7 +4,10 @@ import { Topbar } from "@/components/layout/topbar";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { BarList } from "@/components/ui/bar-list";
+import { FunnelChart } from "@/components/ui/funnel-chart";
+import { ActivityChart } from "@/components/ui/activity-chart";
 import { StageDistributionBar } from "@/components/reports/stage-distribution-bar";
+import { bucketByDay } from "@/lib/chart-data";
 import { PeriodPicker } from "@/components/reports/period-picker";
 import { LEAD_SOURCE_LABELS, REJECTION_REASON_LABELS } from "@/lib/labels";
 import { UserPlus, Search, CheckCircle2, ClipboardCheck, Send, Handshake, XCircle } from "lucide-react";
@@ -38,23 +41,23 @@ function getPeriodRange(period: string, from?: string, to?: string) {
 }
 
 const STAGE_GROUPS: { key: string; label: string; statuses: LeadStatus[]; barClass: string; dotClass: string }[] = [
-  { key: "new", label: "Новые", statuses: ["NEW"], barClass: "bg-neutral-300", dotClass: "bg-neutral-300" },
+  { key: "new", label: "Новые", statuses: ["NEW"], barClass: "bg-neutral-400", dotClass: "bg-neutral-400" },
   {
     key: "working",
     label: "В работе",
     statuses: ["SEARCHING_DM", "FIRST_CONTACT", "DM_FOUND", "QUALIFICATION", "CALLBACK_LATER"],
-    barClass: "bg-primary-500",
-    dotClass: "bg-primary-500",
+    barClass: "bg-info-600",
+    dotClass: "bg-info-600",
   },
   {
     key: "manager",
-    label: "У менеджера",
+    label: "У руководителя",
     statuses: ["HANDED_TO_MANAGER", "NEGOTIATION", "PROPOSAL_SENT"],
-    barClass: "bg-warning-500",
-    dotClass: "bg-warning-500",
+    barClass: "bg-warning-600",
+    dotClass: "bg-warning-600",
   },
-  { key: "deal", label: "Сделки", statuses: ["DEAL"], barClass: "bg-success-500", dotClass: "bg-success-500" },
-  { key: "rejected", label: "Отказы", statuses: ["REJECTED"], barClass: "bg-danger-500", dotClass: "bg-danger-500" },
+  { key: "deal", label: "Сделки", statuses: ["DEAL"], barClass: "bg-success-600", dotClass: "bg-success-600" },
+  { key: "rejected", label: "Отказы", statuses: ["REJECTED"], barClass: "bg-danger-600", dotClass: "bg-danger-600" },
 ];
 
 export default async function ReportsPage({
@@ -104,7 +107,7 @@ export default async function ReportsPage({
       _count: true,
     }),
     prisma.user.findMany({
-      where: { deletedAt: null, role: { in: ["OPERATOR", "MANAGER"] } },
+      where: { deletedAt: null, role: { in: ["OPERATOR", "HR_OPERATOR"] } },
       select: {
         id: true,
         firstName: true,
@@ -128,11 +131,31 @@ export default async function ReportsPage({
   const dealsBySourceMap = new Map(sourceDeals.map((s) => [s.source, s._count]));
   const statusCountMap = new Map(statusBreakdown.map((s) => [s.status, s._count]));
 
+  const leadDates = await prisma.lead.findMany({
+    where: dateFilter,
+    select: { createdAt: true },
+  });
+
   const auditLogs = await prisma.auditLog.findMany({
     where: dateFilter,
     orderBy: { createdAt: "desc" },
     take: 40,
   });
+
+  const funnelSteps = [
+    { key: "new", label: "Новые лиды", value: newLeads },
+    { key: "processed", label: "Взяты в работу", value: processedLeads },
+    { key: "dm", label: "Найден ЛПР", value: dmFound },
+    { key: "qualified", label: "Квалифицированы", value: qualified },
+    { key: "handed", label: "Переданы руководителю", value: handedOver },
+    { key: "deal", label: "Сделки", value: deals },
+  ];
+
+  const leadsPerDay = bucketByDay(leadDates.map((l) => l.createdAt), 14);
+
+  // Доля шага от всех новых лидов периода — одинаковая база у всех плиток.
+  const shareOfNew = (value: number) =>
+    newLeads > 0 ? `${Math.round((value / newLeads) * 100)}% от новых` : undefined;
 
   const stageSegments = STAGE_GROUPS.map((group) => ({
     key: group.key,
@@ -171,34 +194,97 @@ export default async function ReportsPage({
         </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
-          <StatCard icon={<UserPlus />} label="Новые лиды" value={newLeads} tone="primary" />
-          <StatCard icon={<Search />} label="Обработанные" value={processedLeads} tone="neutral" />
-          <StatCard icon={<CheckCircle2 />} label="Найдены ЛПР" value={dmFound} tone="primary" />
-          <StatCard icon={<ClipboardCheck />} label="Квалифицированные" value={qualified} tone="primary" />
-          <StatCard icon={<Send />} label="Переданы менеджерам" value={handedOver} tone="warning" />
-          <StatCard icon={<Handshake />} label="Сделки" value={deals} tone="success" />
-          <StatCard icon={<XCircle />} label="Отказы" value={rejected} tone="danger" />
+          <StatCard icon={<UserPlus />} label="Новые лиды" value={newLeads} tone="primary" hint="База периода" />
+          <StatCard
+            icon={<Search />}
+            label="Обработанные"
+            value={processedLeads}
+            tone="info"
+            hint={shareOfNew(processedLeads)}
+            share={newLeads > 0 ? processedLeads / newLeads : 0}
+          />
+          <StatCard
+            icon={<CheckCircle2 />}
+            label="Найдены ЛПР"
+            value={dmFound}
+            tone="info"
+            hint={shareOfNew(dmFound)}
+            share={newLeads > 0 ? dmFound / newLeads : 0}
+          />
+          <StatCard
+            icon={<ClipboardCheck />}
+            label="Квалифицированные"
+            value={qualified}
+            tone="primary"
+            hint={shareOfNew(qualified)}
+            share={newLeads > 0 ? qualified / newLeads : 0}
+          />
+          <StatCard
+            icon={<Send />}
+            label="Переданы руководителю"
+            value={handedOver}
+            tone="warning"
+            hint={shareOfNew(handedOver)}
+            share={newLeads > 0 ? handedOver / newLeads : 0}
+          />
+          <StatCard
+            icon={<Handshake />}
+            label="Сделки"
+            value={deals}
+            tone="success"
+            hint={shareOfNew(deals)}
+            share={newLeads > 0 ? deals / newLeads : 0}
+          />
+          <StatCard
+            icon={<XCircle />}
+            label="Отказы"
+            value={rejected}
+            tone="danger"
+            hint={shareOfNew(rejected)}
+            share={newLeads > 0 ? rejected / newLeads : 0}
+          />
         </div>
 
-        <Card className="mt-4">
-          <CardHeader title="Лиды по этапам воронки" description="Распределение лидов, созданных за период" />
-          <CardBody>
-            <StageDistributionBar segments={stageSegments} />
-          </CardBody>
-        </Card>
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader
+              title="Воронка квалификации"
+              description="Сколько лидов доходит до каждого шага и где они теряются"
+            />
+            <CardBody>
+              <FunnelChart steps={funnelSteps} />
+            </CardBody>
+          </Card>
+
+          <div className="flex flex-col gap-4">
+            <Card>
+              <CardHeader title="Новые лиды по дням" description="Последние 14 дней" />
+              <CardBody>
+                <ActivityChart points={leadsPerDay} valueLabel="лидов" emptyLabel="За две недели новых лидов не было" />
+              </CardBody>
+            </Card>
+
+            <Card className="flex-1">
+              <CardHeader title="Лиды по этапам воронки" description="Распределение лидов, созданных за период" />
+              <CardBody>
+                <StageDistributionBar segments={stageSegments} />
+              </CardBody>
+            </Card>
+          </div>
+        </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader title="Причины отказов" />
             <CardBody>
-              <BarList items={rejectionItems} emptyLabel="Нет отказов за период" />
+              <BarList items={rejectionItems} emptyLabel="Нет отказов за период" showShare />
             </CardBody>
           </Card>
 
           <Card>
             <CardHeader title="Эффективность источников" description="Количество лидов и конверсия в сделку" />
             <CardBody>
-              <BarList items={sourceItems} />
+              <BarList items={sourceItems} showShare />
             </CardBody>
           </Card>
         </div>

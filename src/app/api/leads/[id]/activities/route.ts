@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireApiUser, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiLeadsAccess, ApiAuthError } from "@/lib/auth/guards";
+import { applyAutoStatus } from "@/lib/lead-progression";
+import { revalidateCrm } from "@/lib/revalidate";
 
 const schema = z.object({
   type: z.enum(["CALL", "MESSAGE", "EMAIL", "MEETING", "NOTE"]),
@@ -14,7 +16,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = await requireApiUser();
+    const actor = await requireApiLeadsAccess();
     const { id } = await params;
     const lead = await prisma.lead.findUnique({ where: { id } });
     if (!lead) {
@@ -63,7 +65,11 @@ export async function POST(
       });
     }
 
-    return NextResponse.json({ activity });
+    // Звонок или встреча сами двигают лид по воронке.
+    const autoStatus = await applyAutoStatus(id, actor);
+
+    revalidateCrm();
+    return NextResponse.json({ activity, autoStatus });
   } catch (error) {
     if (error instanceof ApiAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

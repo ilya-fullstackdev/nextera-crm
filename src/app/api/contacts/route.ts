@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireApiUser, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiLeadsAccess, ApiAuthError } from "@/lib/auth/guards";
 
 export async function GET(request: Request) {
   try {
-    await requireApiUser();
+    await requireApiLeadsAccess();
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim();
     const companyId = searchParams.get("companyId") ?? undefined;
@@ -52,7 +52,7 @@ const createSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    await requireApiUser();
+    await requireApiLeadsAccess();
     const body = await request.json().catch(() => null);
     const parsed = createSchema.safeParse(body);
     if (!parsed.success) {

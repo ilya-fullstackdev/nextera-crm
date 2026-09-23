@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth/guards";
+import { requireLeadsAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/prisma";
 import { Topbar } from "@/components/layout/topbar";
 import { SearchBox } from "@/components/shared/search-box";
@@ -10,7 +10,7 @@ export default async function CompaniesPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  const user = await requireUser();
+  const user = await requireLeadsAccess();
   const { q } = await searchParams;
 
   const companies = await prisma.company.findMany({

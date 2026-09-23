@@ -1,4 +1,5 @@
 import type {
+  ExpenseType,
   LeadStatus,
   Priority,
   LeadSource,
@@ -21,7 +22,7 @@ export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   FIRST_CONTACT: "Первый контакт",
   DM_FOUND: "ЛПР найден",
   QUALIFICATION: "Квалификация",
-  HANDED_TO_MANAGER: "Передан менеджеру",
+  HANDED_TO_MANAGER: "Передан руководителю",
   NEGOTIATION: "Переговоры",
   PROPOSAL_SENT: "КП отправлено",
   DEAL: "Сделка",
@@ -88,7 +89,7 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   MEETING: "Встреча",
   NOTE: "Заметка",
   STATUS_CHANGE: "Изменение статуса",
-  HANDOVER: "Передача менеджеру",
+  HANDOVER: "Передача лида",
   FILE: "Файл",
   REJECTION: "Отказ",
 };
@@ -155,11 +156,35 @@ export const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
 
 export const ROLE_LABELS: Record<Role, string> = {
   OPERATOR: "Оператор",
-  MANAGER: "Менеджер",
   DIRECTOR: "Руководитель",
+  HR: "Отдел кадров",
+  HR_OPERATOR: "Кадры + холодные звонки",
+};
+
+export const ROLE_DESCRIPTIONS: Record<Role, string> = {
+  OPERATOR: "Холодные звонки: свои лиды, задачи и передача лида руководителю",
+  DIRECTOR: "Полный доступ, отчёты и журнал аудита",
+  HR: "Наём в отдел холодных звонков. Лиды и клиентов не видит",
+  HR_OPERATOR: "Холодные звонки и наём сотрудников одновременно",
+};
+
+export const ROLE_TONE: Record<Role, "neutral" | "primary" | "success" | "warning" | "info"> = {
+  OPERATOR: "info",
+  DIRECTOR: "warning",
+  HR: "success",
+  HR_OPERATOR: "neutral",
 };
 
 export const USER_STATUS_LABELS: Record<UserStatus, string> = {
   ACTIVE: "Активен",
   BLOCKED: "Заблокирован",
+};
+
+export const EXPENSE_TYPE_LABELS: Record<ExpenseType, string> = {
+  HOSTING: "Хостинг",
+  DOMAIN: "Домен",
+  SSL: "SSL-сертификат",
+  EMAIL: "Почта",
+  SERVICE: "Сервис",
+  OTHER: "Другое",
 };

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireApiUser, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiLeadsAccess, ApiAuthError } from "@/lib/auth/guards";
 
 export async function GET(request: Request) {
   try {
-    await requireApiUser();
+    await requireApiLeadsAccess();
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim();
 

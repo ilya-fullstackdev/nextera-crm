@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireApiRole, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiEmployeesAccess, ApiAuthError } from "@/lib/auth/guards";
+import { canManageRole } from "@/lib/permissions";
 import { hashPassword } from "@/lib/auth/password";
 import { logAudit } from "@/lib/audit";
 import { ROLE_LABELS, USER_STATUS_LABELS } from "@/lib/labels";
@@ -14,9 +15,10 @@ const updateSchema = z.object({
     .min(3)
     .regex(/^[a-zA-Z0-9._-]+$/)
     .optional(),
-  role: z.enum(["OPERATOR", "MANAGER", "DIRECTOR"]).optional(),
+  role: z.enum(["OPERATOR", "DIRECTOR", "HR", "HR_OPERATOR"]).optional(),
   status: z.enum(["ACTIVE", "BLOCKED"]).optional(),
   password: z.string().min(6).optional(),
+  hiredById: z.string().nullable().optional(),
 });
 
 export async function PATCH(
@@ -24,7 +26,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = await requireApiRole(["DIRECTOR"]);
+    const actor = await requireApiEmployeesAccess();
     const { id } = await params;
     const body = await request.json().catch(() => null);
     const parsed = updateSchema.safeParse(body);
@@ -36,6 +38,19 @@ export async function PATCH(
     const target = await prisma.user.findUnique({ where: { id } });
     if (!target || target.deletedAt) {
       return NextResponse.json({ error: "Сотрудник не найден" }, { status: 404 });
+    }
+
+    if (target.id !== actor.id && !canManageRole(actor.role, target.role)) {
+      return NextResponse.json(
+        { error: "Вы можете менять только сотрудников отдела холодных звонков" },
+        { status: 403 }
+      );
+    }
+    if (data.role && !canManageRole(actor.role, data.role)) {
+      return NextResponse.json(
+        { error: "Вы можете назначать только роли отдела холодных звонков" },
+        { status: 403 }
+      );
     }
 
     if (data.login && data.login !== target.login) {
@@ -59,6 +74,9 @@ export async function PATCH(
     if (data.role) updateData.role = data.role;
     if (data.status) updateData.status = data.status;
     if (data.password) updateData.passwordHash = await hashPassword(data.password);
+    if (data.hiredById !== undefined) {
+      updateData.hiredById = data.hiredById && data.hiredById !== id ? data.hiredById : null;
+    }
 
     const updated = await prisma.user.update({ where: { id }, data: updateData });
 
@@ -127,7 +145,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = await requireApiRole(["DIRECTOR"]);
+    const actor = await requireApiEmployeesAccess();
     const { id } = await params;
 
     if (id === actor.id) {
@@ -137,6 +155,13 @@ export async function DELETE(
     const target = await prisma.user.findUnique({ where: { id } });
     if (!target || target.deletedAt) {
       return NextResponse.json({ error: "Сотрудник не найден" }, { status: 404 });
+    }
+
+    if (!canManageRole(actor.role, target.role)) {
+      return NextResponse.json(
+        { error: "Вы можете удалять только сотрудников отдела холодных звонков" },
+        { status: 403 }
+      );
     }
 
     const body = await request.json().catch(() => ({}));

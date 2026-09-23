@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireApiUser, requireApiRole, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiLeadsAccess, requireApiRole, ApiAuthError } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 
 const updateSchema = z.object({
@@ -19,7 +19,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = await requireApiUser();
+    const actor = await requireApiLeadsAccess();
     const { id } = await params;
     const body = await request.json().catch(() => null);
     const parsed = updateSchema.safeParse(body);

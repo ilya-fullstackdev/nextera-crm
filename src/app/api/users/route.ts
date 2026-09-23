@@ -8,12 +8,14 @@ export async function GET(request: Request) {
     await requireApiUser();
     const { searchParams } = new URL(request.url);
     const role = searchParams.get("role") as Role | null;
+    // ?roles=HR,HR_OPERATOR — несколько ролей одним запросом
+    const roles = searchParams.get("roles")?.split(",").filter(Boolean) as Role[] | undefined;
 
     const users = await prisma.user.findMany({
       where: {
         deletedAt: null,
         status: "ACTIVE",
-        ...(role ? { role } : {}),
+        ...(roles && roles.length > 0 ? { role: { in: roles } } : role ? { role } : {}),
       },
       select: { id: true, firstName: true, lastName: true, role: true },
       orderBy: { firstName: "asc" },

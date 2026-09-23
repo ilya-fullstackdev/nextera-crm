@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth/guards";
+import { requireLeadsAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/prisma";
 import { Topbar } from "@/components/layout/topbar";
 import { SearchBox } from "@/components/shared/search-box";
@@ -13,7 +13,7 @@ export default async function LeadsPage({
 }: {
   searchParams: Promise<LeadsSearchParams>;
 }) {
-  const user = await requireUser();
+  const user = await requireLeadsAccess();
   const params = await searchParams;
   const where = buildLeadsWhere(user, params);
   const page = Math.max(1, Number(params.page ?? "1"));
@@ -41,16 +41,14 @@ export default async function LeadsPage({
 
   return (
     <>
-      <Topbar title={user.role === "OPERATOR" ? "Лиды" : user.role === "MANAGER" ? "Мои лиды" : "Лиды"} />
+      <Topbar title="Лиды" />
       <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex flex-1 items-center gap-3">
-            <SearchBox placeholder="Поиск по компании, контакту, телефону" />
-          </div>
-          <NewLeadButton />
-        </div>
-        <div className="mb-4">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <SearchBox placeholder="Поиск по компании, контакту, телефону" />
           <LeadFilters owners={owners} />
+          <div className="md:ml-auto">
+            <NewLeadButton />
+          </div>
         </div>
         <div className="rounded-lg border border-border-subtle bg-white shadow-xs">
           <LeadsTable leads={leads} currentUserRole={user.role} />

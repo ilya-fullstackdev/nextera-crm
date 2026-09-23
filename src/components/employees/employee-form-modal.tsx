@@ -7,7 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { ROLE_LABELS, USER_STATUS_LABELS } from "@/lib/labels";
+import { ROLE_LABELS, ROLE_DESCRIPTIONS, USER_STATUS_LABELS } from "@/lib/labels";
+import { assignableRoles } from "@/lib/permissions";
+import type { Role } from "@/generated/prisma/enums";
 import type { EmployeeRow } from "@/components/employees/employees-client";
 
 const PASSWORD_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%";
@@ -23,24 +25,30 @@ const emptyForm = {
   lastName: "",
   login: "",
   password: "",
-  role: "OPERATOR" as "OPERATOR" | "MANAGER" | "DIRECTOR",
+  role: "OPERATOR" as Role,
   status: "ACTIVE" as "ACTIVE" | "BLOCKED",
+  hiredById: "",
 };
 
 export function EmployeeFormModal({
   open,
   employee,
+  actorRole,
   onClose,
   onSuccess,
 }: {
   open: boolean;
   employee: EmployeeRow | null;
+  actorRole: Role;
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  // Кадровик нанимает только в отдел холодных звонков.
+  const roleOptions = assignableRoles(actorRole);
   const toast = useToast();
   const isEdit = Boolean(employee);
   const [form, setForm] = useState(emptyForm);
+  const [recruiters, setRecruiters] = useState<{ id: string; firstName: string; lastName: string }[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,10 +65,16 @@ export function EmployeeFormModal({
           password: "",
           role: employee.role,
           status: employee.status,
+          hiredById: employee.hiredById ?? "",
         });
       } else {
         setForm(emptyForm);
       }
+      // Привести сотрудника в отдел может кадровик или руководитель.
+      fetch("/api/users?roles=HR,HR_OPERATOR,DIRECTOR")
+        .then((r) => (r.ok ? r.json() : { users: [] }))
+        .then((d) => setRecruiters(d.users ?? []))
+        .catch(() => setRecruiters([]));
     }
   }, [open, employee]);
 
@@ -81,6 +95,7 @@ export function EmployeeFormModal({
         login: form.login,
         role: form.role,
         status: form.status,
+        hiredById: form.hiredById || null,
       };
       if (!isEdit) {
         payload.password = form.password;
@@ -197,11 +212,12 @@ export function EmployeeFormModal({
           <Select
             label="Роль"
             value={form.role}
-            onChange={(e) => update("role", e.target.value as typeof form.role)}
+            onChange={(e) => update("role", e.target.value as Role)}
+            hint={ROLE_DESCRIPTIONS[form.role]}
           >
-            {Object.entries(ROLE_LABELS).map(([value, label]) => (
+            {roleOptions.map((value) => (
               <option key={value} value={value}>
-                {label}
+                {ROLE_LABELS[value]}
               </option>
             ))}
           </Select>
@@ -217,6 +233,22 @@ export function EmployeeFormModal({
             ))}
           </Select>
         </div>
+
+        <Select
+          label="Кто привёл сотрудника"
+          value={form.hiredById}
+          onChange={(e) => update("hiredById", e.target.value)}
+          placeholder="Не указан"
+          hint="С его сделок этому человеку идёт процент как рекрутёру"
+        >
+          {recruiters
+            .filter((r) => r.id !== employee?.id)
+            .map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.firstName} {r.lastName}
+              </option>
+            ))}
+        </Select>
 
         {error && (
           <p className="rounded-md bg-danger-50 px-3 py-2 text-[13px] text-danger-700">{error}</p>

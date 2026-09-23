@@ -9,8 +9,9 @@ datasource db {
 
 enum Role {
   OPERATOR
-  MANAGER
   DIRECTOR
+  HR
+  HR_OPERATOR
 }
 
 enum UserStatus {
@@ -109,6 +110,30 @@ enum InterestLevel {
   HIGH
 }
 
+enum PayoutRole {
+  LEAD_FINDER
+  RECRUITER
+}
+
+enum PayoutStatus {
+  PENDING
+  PAID
+}
+
+enum ExpensePeriod {
+  MONTHLY
+  YEARLY
+}
+
+enum ExpenseType {
+  HOSTING
+  DOMAIN
+  SSL
+  EMAIL
+  SERVICE
+  OTHER
+}
+
 enum RejectionReason {
   NO_NEED
   HAS_CONTRACTOR
@@ -135,8 +160,15 @@ model User {
   lastLoginAt  DateTime?
   deletedAt    DateTime?
 
+  // Кто привёл сотрудника в отдел холодных звонков — ему идёт процент с его сделок.
+  hiredById String?
+  hiredBy   User?   @relation("UserHiredBy", fields: [hiredById], references: [id])
+  hires     User[]  @relation("UserHiredBy")
+
   leadsOwned     Lead[]         @relation("LeadOwner")
   leadsCreated   Lead[]         @relation("LeadCreator")
+  dealsClosed    Deal[]         @relation("DealClosedBy")
+  payouts        Payout[]       @relation("PayoutRecipient")
   activities     LeadActivity[]
   tasksAssigned  Task[]         @relation("TaskAssignee")
   tasksCreated   Task[]         @relation("TaskCreator")
@@ -146,6 +178,7 @@ model User {
   handoversTo    LeadHandover[] @relation("HandoverTo")
 
   @@index([status])
+  @@index([hiredById])
 }
 
 model Company {
@@ -224,6 +257,7 @@ model Lead {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  deal           Deal?
   decisionMakers Contact[]      @relation("LeadDecisionMakers")
   activities     LeadActivity[]
   tasks          Task[]
@@ -315,6 +349,91 @@ model LeadHandover {
   createdAt DateTime @default(now())
 
   @@index([leadId])
+}
+
+/// Закрытая сделка — проект, за который клиент заплатил.
+model Deal {
+  id     String @id @default(cuid())
+  leadId String @unique
+  lead   Lead   @relation(fields: [leadId], references: [id])
+
+  /// Сумма, которую заплатили за работу, в рублях.
+  amount  Int
+  comment String?
+
+  closedById String
+  closedBy   User   @relation("DealClosedBy", fields: [closedById], references: [id])
+  closedAt   DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payouts  Payout[]
+  expenses ProjectExpense[]
+
+  @@index([closedAt])
+}
+
+/// Сколько и кому нужно выплатить за конкретный проект.
+model Payout {
+  id     String @id @default(cuid())
+  dealId String
+  deal   Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation("PayoutRecipient", fields: [userId], references: [id])
+
+  role    PayoutRole
+  /// Процент от суммы сделки.
+  percent Float
+  /// Итоговая сумма к выплате в рублях.
+  amount  Int
+
+  status PayoutStatus @default(PENDING)
+  paidAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dealId])
+  @@index([userId])
+  @@index([status])
+}
+
+/// Процент выплаты, закреплённый за должностью. Одинаков для всех сделок.
+model PayoutRate {
+  id   String @id @default(cuid())
+  role Role   @unique
+
+  /// Процент, если сотрудник с этой должностью нашёл лид.
+  finderPercent Float @default(0)
+  /// Процент, если он привёл в отдел того, кто нашёл лид.
+  recruiterPercent Float @default(0)
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Регулярный расход по проекту: хостинг, домен, почта и т.д.
+model ProjectExpense {
+  id     String @id @default(cuid())
+  dealId String
+  deal   Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  type ExpenseType @default(OTHER)
+  name String
+  /// Ссылка на панель хостинга или регистратора — для быстрого перехода.
+  url  String?
+
+  /// Оплата в рублях за один период.
+  amount   Int
+  period   ExpensePeriod @default(MONTHLY)
+  renewsAt DateTime?
+  comment  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([dealId])
 }
 
 model AuditLog {

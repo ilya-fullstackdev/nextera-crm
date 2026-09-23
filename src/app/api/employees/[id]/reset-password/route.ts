@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireApiRole, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiEmployeesAccess, ApiAuthError } from "@/lib/auth/guards";
+import { canManageRole } from "@/lib/permissions";
 import { generatePassword, hashPassword } from "@/lib/auth/password";
 import { logAudit } from "@/lib/audit";
 
@@ -12,7 +13,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = await requireApiRole(["DIRECTOR"]);
+    const actor = await requireApiEmployeesAccess();
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
     const parsed = schema.safeParse(body ?? {});
@@ -23,6 +24,13 @@ export async function POST(
     const target = await prisma.user.findUnique({ where: { id } });
     if (!target || target.deletedAt) {
       return NextResponse.json({ error: "Сотрудник не найден" }, { status: 404 });
+    }
+
+    if (!canManageRole(actor.role, target.role)) {
+      return NextResponse.json(
+        { error: "Вы можете менять пароли только сотрудникам отдела холодных звонков" },
+        { status: 403 }
+      );
     }
 
     const newPassword = parsed.data.password ?? generatePassword();

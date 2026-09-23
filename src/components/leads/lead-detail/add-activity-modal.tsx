@@ -7,6 +7,8 @@ import { Textarea } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { LEAD_STATUS_LABELS } from "@/lib/labels";
+import type { LeadStatus } from "@/generated/prisma/enums";
 import { ACTIVITY_TYPE_LABELS } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +57,12 @@ export function AddActivityModal({
         toast.error("Не удалось сохранить активность");
         return;
       }
-      toast.success("Активность добавлена");
+      const body = await res.json().catch(() => ({}));
+      if (body.autoStatus) {
+        toast.success("Лид перешёл на следующий этап", LEAD_STATUS_LABELS[body.autoStatus as LeadStatus]);
+      } else {
+        toast.success("Активность добавлена");
+      }
       setComment("");
       setNextContactAt("");
       setType("CALL");

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { startOfDay, endOfDay } from "date-fns";
+import { startOfDay, endOfDay, subDays } from "date-fns";
 import { requireUser } from "@/lib/auth/guards";
 import { prisma } from "@/lib/prisma";
 import { Topbar } from "@/components/layout/topbar";
@@ -8,10 +8,16 @@ import { Card, CardHeader, CardBody } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ActivityChart } from "@/components/ui/activity-chart";
+import { StageDistributionBar } from "@/components/reports/stage-distribution-bar";
+import { HrDashboard } from "@/components/dashboard/hr-dashboard";
+import { bucketByDay } from "@/lib/chart-data";
+import { canViewLeads } from "@/lib/permissions";
 import { ownLeadsFilter, ownTasksFilter } from "@/lib/scope";
 import { LEAD_STATUS_LABELS, LEAD_STATUS_TONE, PRIORITY_LABELS, PRIORITY_TONE, ACTIVITY_TYPE_LABELS } from "@/lib/labels";
 import { formatRelativeDay, formatShortDate } from "@/lib/format";
 import { UserPlus, CheckSquare, AlertTriangle, Briefcase, Send, Phone, StickyNote, ArrowRightLeft, Tag } from "lucide-react";
+import type { LeadStatus } from "@/generated/prisma/enums";
 
 const ACTIVITY_ICONS = {
   CALL: Phone,
@@ -27,6 +33,17 @@ const ACTIVITY_ICONS = {
 
 export default async function DashboardPage() {
   const user = await requireUser();
+
+  // У отдела кадров своя главная — про найм, без лидов и клиентов.
+  if (!canViewLeads(user.role)) {
+    return (
+      <>
+        <Topbar title={`Здравствуйте, ${user.firstName}`} />
+        <HrDashboard />
+      </>
+    );
+  }
+
   const leadFilter = ownLeadsFilter(user);
   const taskFilter = ownTasksFilter(user);
   const todayStart = startOfDay(new Date());
@@ -41,6 +58,8 @@ export default async function DashboardPage() {
     recentLeads,
     upcomingTasks,
     recentActivities,
+    statusBreakdown,
+    activityDates,
   ] = await Promise.all([
     prisma.lead.count({ where: { ...leadFilter, createdAt: { gte: todayStart, lte: todayEnd } } }),
     prisma.task.count({
@@ -67,21 +86,109 @@ export default async function DashboardPage() {
       take: 6,
       include: { lead: { include: { company: true } }, user: true },
     }),
+    prisma.lead.groupBy({ by: ["status"], where: leadFilter, _count: true }),
+    prisma.leadActivity.findMany({
+      where: {
+        ...(user.role === "DIRECTOR" ? {} : { userId: user.id }),
+        createdAt: { gte: subDays(startOfDay(new Date()), 13) },
+      },
+      select: { createdAt: true },
+    }),
   ]);
+
+  const statusCount = new Map(statusBreakdown.map((s) => [s.status, s._count]));
+  const countOf = (statuses: LeadStatus[]) => statuses.reduce((sum, s) => sum + (statusCount.get(s) ?? 0), 0);
+
+  const stageSegments = [
+    { key: "new", label: "Новые", value: countOf(["NEW"]), barClass: "bg-neutral-400", dotClass: "bg-neutral-400" },
+    {
+      key: "working",
+      label: "В работе",
+      value: countOf(["SEARCHING_DM", "FIRST_CONTACT", "DM_FOUND", "QUALIFICATION", "CALLBACK_LATER"]),
+      barClass: "bg-info-600",
+      dotClass: "bg-info-600",
+    },
+    {
+      key: "manager",
+      label: "У руководителя",
+      value: countOf(["HANDED_TO_MANAGER", "NEGOTIATION", "PROPOSAL_SENT"]),
+      barClass: "bg-warning-600",
+      dotClass: "bg-warning-600",
+    },
+    { key: "deal", label: "Сделки", value: countOf(["DEAL"]), barClass: "bg-success-600", dotClass: "bg-success-600" },
+    { key: "rejected", label: "Отказы", value: countOf(["REJECTED"]), barClass: "bg-danger-600", dotClass: "bg-danger-600" },
+  ];
+
+  const totalLeads = stageSegments.reduce((sum, s) => sum + s.value, 0);
+  const activityPoints = bucketByDay(activityDates.map((a) => a.createdAt), 14);
 
   return (
     <>
       <Topbar title={`Здравствуйте, ${user.firstName}`} />
       <div className="flex-1 overflow-y-auto p-4 md:p-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-          <StatCard icon={<UserPlus />} label="Новые лиды сегодня" value={newLeadsToday} tone="primary" />
-          <StatCard icon={<CheckSquare />} label="Задачи на сегодня" value={tasksToday} tone="neutral" />
-          <StatCard icon={<AlertTriangle />} label="Просроченные задачи" value={overdueTasks} tone="danger" />
-          <StatCard icon={<Briefcase />} label="Лиды в работе" value={leadsInProgress} tone="warning" />
-          <StatCard icon={<Send />} label="Передано менеджеру" value={handedOverCount} tone="success" />
+          <StatCard
+            icon={<UserPlus />}
+            label="Новые лиды сегодня"
+            value={newLeadsToday}
+            tone="primary"
+            hint={`Всего лидов: ${totalLeads}`}
+            href="/crm/leads"
+          />
+          <StatCard
+            icon={<CheckSquare />}
+            label="Задачи на сегодня"
+            value={tasksToday}
+            tone="info"
+            hint={tasksToday === 0 ? "На сегодня задач нет" : "Запланировано на сегодня"}
+            href="/crm/tasks"
+          />
+          <StatCard
+            icon={<AlertTriangle />}
+            label="Просроченные задачи"
+            value={overdueTasks}
+            tone={overdueTasks > 0 ? "danger" : "neutral"}
+            hint={overdueTasks > 0 ? "Требуют внимания" : "Просроченных нет"}
+            href="/crm/tasks"
+          />
+          <StatCard
+            icon={<Briefcase />}
+            label="Лиды в работе"
+            value={leadsInProgress}
+            tone="warning"
+            hint={totalLeads > 0 ? `${Math.round((leadsInProgress / totalLeads) * 100)}% от всех лидов` : undefined}
+            share={totalLeads > 0 ? leadsInProgress / totalLeads : 0}
+          />
+          <StatCard
+            icon={<Send />}
+            label="Передано руководителю"
+            value={handedOverCount}
+            tone="success"
+            hint={totalLeads > 0 ? `${Math.round((handedOverCount / totalLeads) * 100)}% от всех лидов` : undefined}
+            share={totalLeads > 0 ? handedOverCount / totalLeads : 0}
+          />
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
+            <CardHeader
+              title="Активность за 14 дней"
+              description={user.role === "DIRECTOR" ? "Действия всех сотрудников по дням" : "Ваши звонки, сообщения и заметки по дням"}
+            />
+            <CardBody>
+              <ActivityChart points={activityPoints} emptyLabel="За две недели активности не было" />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Лиды по этапам" description={user.role === "DIRECTOR" ? "Все лиды компании" : "Ваши лиды"} />
+            <CardBody>
+              <StageDistributionBar segments={stageSegments} />
+            </CardBody>
+          </Card>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader
               title="Последние лиды"

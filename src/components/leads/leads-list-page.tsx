@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth/guards";
+import { requireLeadsAccess } from "@/lib/auth/guards";
 import { prisma } from "@/lib/prisma";
 import { Topbar } from "@/components/layout/topbar";
 import { SearchBox } from "@/components/shared/search-box";
@@ -21,7 +21,7 @@ export async function LeadsListPage({
   hideStatusFilter?: boolean;
   ownerScope?: "owner" | "handedFrom";
 }) {
-  const user = await requireUser();
+  const user = await requireLeadsAccess();
   const params = await searchParams;
   const where = buildLeadsWhere(user, params, baseStatuses, ownerScope);
   const page = Math.max(1, Number(params.page ?? "1"));
@@ -51,10 +51,8 @@ export async function LeadsListPage({
     <>
       <Topbar title={title} />
       <div className="flex-1 overflow-y-auto p-4 md:p-6">
-        <div className="mb-4">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <SearchBox placeholder="Поиск по компании, контакту, телефону" />
-        </div>
-        <div className="mb-4">
           <LeadFilters owners={owners} hideStatus={hideStatusFilter} />
         </div>
         <div className="rounded-lg border border-border-subtle bg-white shadow-xs">

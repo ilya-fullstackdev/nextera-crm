@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireApiUser, requireApiRole, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiLeadsAccess, requireApiRole, ApiAuthError } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
+import { revalidateCrm } from "@/lib/revalidate";
+import { applyAutoStatus } from "@/lib/lead-progression";
 import { LEAD_STATUS_LABELS } from "@/lib/labels";
 
 async function loadLeadOrThrow(id: string) {
@@ -56,7 +58,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = await requireApiUser();
+    const actor = await requireApiLeadsAccess();
     const { id } = await params;
     const lead = await loadLeadOrThrow(id);
 
@@ -75,7 +77,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Используйте форму отказа для этого статуса" }, { status: 400 });
     }
     if (data.status === "HANDED_TO_MANAGER") {
-      return NextResponse.json({ error: "Используйте форму передачи менеджеру" }, { status: 400 });
+      return NextResponse.json({ error: "Используйте форму передачи лида" }, { status: 400 });
     }
     if (data.ownerId && actor.role !== "DIRECTOR") {
       return NextResponse.json({ error: "Изменить ответственного может только руководитель" }, { status: 403 });
@@ -122,7 +124,11 @@ export async function PATCH(
       });
     }
 
-    return NextResponse.json({ lead: updated });
+    // Если статус не выставили руками — пересчитываем его по заполненным данным.
+    const autoStatus = data.status ? null : await applyAutoStatus(id, actor);
+
+    revalidateCrm();
+    return NextResponse.json({ lead: updated, autoStatus });
   } catch (error) {
     if (error instanceof ApiAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -160,6 +166,8 @@ export async function DELETE(
       oldValue: { company: lead.company.name },
     });
 
+    // Лид пропадает сразу из всех вкладок CRM, а не только из текущей.
+    revalidateCrm();
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof ApiAuthError) {

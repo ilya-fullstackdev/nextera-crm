@@ -21,12 +21,20 @@ interface PipelineLead {
 
 const GUARDED_STATUSES: LeadStatus[] = ["REJECTED", "HANDED_TO_MANAGER"];
 
-export function PipelineBoard({ leads: initialLeads }: { leads: PipelineLead[]; managers: unknown[] }) {
+export function PipelineBoard({ leads: serverLeads }: { leads: PipelineLead[] }) {
   const router = useRouter();
   const toast = useToast();
-  const [leads, setLeads] = useState(initialLeads);
+  // Список всегда берём из серверных данных: так удалённый лид исчезает с доски
+  // сразу после router.refresh(). В state держим только статусы, которые
+  // перетащили прямо сейчас, — чтобы карточка не прыгала до ответа сервера.
+  const [pendingStatus, setPendingStatus] = useState<Record<string, LeadStatus>>({});
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<LeadStatus | null>(null);
+
+  const leads = useMemo(
+    () => serverLeads.map((l) => (pendingStatus[l.id] ? { ...l, status: pendingStatus[l.id] } : l)),
+    [serverLeads, pendingStatus]
+  );
 
   const columns = useMemo(() => {
     const map = new Map<LeadStatus, PipelineLead[]>();
@@ -46,13 +54,12 @@ export function PipelineBoard({ leads: initialLeads }: { leads: PipelineLead[]; 
 
     if (GUARDED_STATUSES.includes(status)) {
       toast.info(
-        status === "REJECTED" ? "Укажите причину отказа в карточке лида" : "Передача менеджеру выполняется из карточки лида"
+        status === "REJECTED" ? "Укажите причину отказа в карточке лида" : "Передача лида выполняется из его карточки"
       );
       return;
     }
 
-    const prevStatus = lead.status;
-    setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, status } : l)));
+    setPendingStatus((prev) => ({ ...prev, [lead.id]: status }));
 
     const res = await fetch(`/api/leads/${lead.id}`, {
       method: "PATCH",
@@ -61,7 +68,11 @@ export function PipelineBoard({ leads: initialLeads }: { leads: PipelineLead[]; 
     });
 
     if (!res.ok) {
-      setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, status: prevStatus } : l)));
+      setPendingStatus((prev) => {
+        const next = { ...prev };
+        delete next[lead.id];
+        return next;
+      });
       toast.error("Не удалось изменить статус");
       return;
     }

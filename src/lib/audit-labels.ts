@@ -14,8 +14,16 @@ const ACTION_LABELS: Record<string, string> = {
   UPDATE_CONTACT: "изменил контакт",
   DELETE_CONTACT: "удалил контакт",
   UPDATE_LEAD_STATUS: "изменил статус лида",
-  HANDOVER_LEAD: "передал лид менеджеру",
+  HANDOVER_LEAD: "передал лид",
   REJECT_LEAD: "перевёл лид в отказ",
+  CLOSE_DEAL: "закрыл сделку",
+  UPDATE_PAYOUT_RATES: "изменил проценты выплат",
+  UPDATE_DEAL: "изменил сумму сделки",
+  PAY_PAYOUT: "отметил выплату",
+  UNPAY_PAYOUT: "отменил отметку о выплате",
+  CREATE_EXPENSE: "добавил расход по проекту",
+  UPDATE_EXPENSE: "изменил расход по проекту",
+  DELETE_EXPENSE: "удалил расход по проекту",
 };
 
 export function describeAuditLog(entry: {
@@ -35,6 +43,18 @@ export function describeAuditLog(entry: {
   }
   if (newV && "company" in newV) {
     return `${label}: ${newV.company}`;
+  }
+  if (newV && "deal" in newV) {
+    return `${label}: ${newV.deal}`;
+  }
+  if (newV && "payout" in newV) {
+    return `${label}: ${newV.payout}`;
+  }
+  if (newV && "expense" in newV) {
+    return `${label}: ${newV.expense}`;
+  }
+  if (newV && "rates" in newV) {
+    return `${label} (${newV.rates})`;
   }
   if (newV && "toUser" in newV) {
     return `${label}: ${newV.toUser}`;

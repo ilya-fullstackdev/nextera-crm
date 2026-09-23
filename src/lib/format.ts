@@ -23,3 +23,13 @@ export function formatRelativeDay(date: string | Date) {
 export function formatTimeAgo(date: string | Date) {
   return formatDistanceToNow(new Date(date), { locale: ru, addSuffix: true });
 }
+
+/** Русское склонение: plural(1, ["выплата", "выплаты", "выплат"]) → «выплата». */
+export function plural(count: number, forms: [string, string, string]) {
+  const n = Math.abs(count) % 100;
+  const n1 = n % 10;
+  if (n > 10 && n < 20) return forms[2];
+  if (n1 > 1 && n1 < 5) return forms[1];
+  if (n1 === 1) return forms[0];
+  return forms[2];
+}

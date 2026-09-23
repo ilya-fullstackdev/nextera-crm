@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireApiRole, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiEmployeesAccess, ApiAuthError } from "@/lib/auth/guards";
+import { assignableRoles, canManageRole, canViewLeads } from "@/lib/permissions";
 import { hashPassword } from "@/lib/auth/password";
 import { logAudit } from "@/lib/audit";
 import { ROLE_LABELS } from "@/lib/labels";
@@ -14,27 +15,32 @@ const createSchema = z.object({
     .min(3, "Логин минимум 3 символа")
     .regex(/^[a-zA-Z0-9._-]+$/, "Логин может содержать только латинские буквы, цифры, точку, дефис и подчёркивание"),
   password: z.string().min(6, "Пароль минимум 6 символов"),
-  role: z.enum(["OPERATOR", "MANAGER", "DIRECTOR"]),
+  role: z.enum(["OPERATOR", "DIRECTOR", "HR", "HR_OPERATOR"]),
   status: z.enum(["ACTIVE", "BLOCKED"]).default("ACTIVE"),
+  hiredById: z.string().optional(),
 });
 
 export async function GET() {
   try {
-    await requireApiRole(["DIRECTOR"]);
+    const actor = await requireApiEmployeesAccess();
+    // Кадровик ведёт только отдел холодных звонков, руководитель видит всех.
+    const visibleRoles = actor.role === "DIRECTOR" ? undefined : assignableRoles(actor.role);
 
     const users = await prisma.user.findMany({
-      where: { deletedAt: null },
+      where: { deletedAt: null, ...(visibleRoles ? { role: { in: visibleRoles } } : {}) },
       orderBy: { createdAt: "asc" },
     });
 
+    const showLeadStats = canViewLeads(actor.role);
+
     const withCounts = await Promise.all(
       users.map(async (u) => {
-        const [activeLeads, handedOver] = await Promise.all([
+        const [activeLeads, handedOver] = showLeadStats ? await Promise.all([
           prisma.lead.count({
             where: { ownerId: u.id, status: { notIn: ["DEAL", "REJECTED"] } },
           }),
           prisma.leadHandover.count({ where: { fromUserId: u.id } }),
-        ]);
+        ]) : [0, 0];
         return {
           id: u.id,
           firstName: u.firstName,
@@ -42,6 +48,7 @@ export async function GET() {
           login: u.login,
           role: u.role,
           status: u.status,
+          hiredById: u.hiredById,
           createdAt: u.createdAt,
           lastLoginAt: u.lastLoginAt,
           activeLeads,
@@ -61,7 +68,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const actor = await requireApiRole(["DIRECTOR"]);
+    const actor = await requireApiEmployeesAccess();
     const body = await request.json().catch(() => null);
     const parsed = createSchema.safeParse(body);
     if (!parsed.success) {
@@ -73,12 +80,23 @@ export async function POST(request: Request) {
 
     const data = parsed.data;
 
+    if (!canManageRole(actor.role, data.role)) {
+      return NextResponse.json(
+        { error: "Вы можете заводить только сотрудников отдела холодных звонков" },
+        { status: 403 }
+      );
+    }
+
     const existing = await prisma.user.findUnique({ where: { login: data.login } });
     if (existing) {
       return NextResponse.json({ error: "Этот логин уже используется" }, { status: 409 });
     }
 
     const passwordHash = await hashPassword(data.password);
+
+    // Кадровик по умолчанию записывает найм на себя — с этого считается его процент.
+    const hiredById =
+      data.hiredById ?? (actor.role === "HR" || actor.role === "HR_OPERATOR" ? actor.id : undefined);
 
     const user = await prisma.user.create({
       data: {
@@ -88,6 +106,7 @@ export async function POST(request: Request) {
         passwordHash,
         role: data.role,
         status: data.status,
+        hiredById,
       },
     });
 

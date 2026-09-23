@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireApiUser, ApiAuthError } from "@/lib/auth/guards";
+import { canViewLeads } from "@/lib/permissions";
 
 const createSchema = z.object({
   leadId: z.string().optional(),
@@ -21,6 +22,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Некорректные данные" }, { status: 400 });
     }
     const data = parsed.data;
+
+    // Отдел кадров не работает с лидами — задачу к лиду привязать не может.
+    if (data.leadId && !canViewLeads(actor.role)) {
+      return NextResponse.json({ error: "Недостаточно прав" }, { status: 403 });
+    }
 
     const task = await prisma.task.create({
       data: {

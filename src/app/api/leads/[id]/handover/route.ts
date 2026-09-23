@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireApiUser, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiLeadsAccess, ApiAuthError } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
+import { revalidateCrm } from "@/lib/revalidate";
 import { fullName } from "@/lib/auth/current-user";
+import { canReceiveHandover } from "@/lib/permissions";
 
 const schema = z.object({
-  toUserId: z.string().min(1, "Выберите менеджера"),
+  toUserId: z.string().min(1, "Выберите, кому передать лид"),
   dmInfo: z.string().optional(),
   needSummary: z.string().optional(),
   situation: z.string().optional(),
@@ -24,7 +26,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = await requireApiUser();
+    const actor = await requireApiLeadsAccess();
     const { id } = await params;
     const lead = await prisma.lead.findUnique({ where: { id } });
     if (!lead) {
@@ -42,8 +44,12 @@ export async function POST(
     const data = parsed.data;
 
     const toUser = await prisma.user.findUnique({ where: { id: data.toUserId } });
-    if (!toUser || toUser.deletedAt || toUser.status !== "ACTIVE" || toUser.role !== "MANAGER") {
-      return NextResponse.json({ error: "Выбранный менеджер недоступен" }, { status: 400 });
+    // Лид принимает руководитель.
+    if (!toUser || toUser.deletedAt || toUser.status !== "ACTIVE" || !canReceiveHandover(toUser.role)) {
+      return NextResponse.json({ error: "Выбранный сотрудник недоступен" }, { status: 400 });
+    }
+    if (toUser.id === actor.id) {
+      return NextResponse.json({ error: "Нельзя передать лид самому себе" }, { status: 400 });
     }
 
     const [, , updatedLead] = await prisma.$transaction([
@@ -100,6 +106,7 @@ export async function POST(
       newValue: { toUser: fullName(toUser) },
     });
 
+    revalidateCrm();
     return NextResponse.json({ lead: updatedLead });
   } catch (error) {
     if (error instanceof ApiAuthError) {

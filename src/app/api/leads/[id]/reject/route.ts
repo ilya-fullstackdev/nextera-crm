@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireApiUser, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiLeadsAccess, ApiAuthError } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
+import { revalidateCrm } from "@/lib/revalidate";
 import { REJECTION_REASON_LABELS } from "@/lib/labels";
 
 const schema = z.object({
@@ -26,7 +27,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = await requireApiUser();
+    const actor = await requireApiLeadsAccess();
     const { id } = await params;
     const lead = await prisma.lead.findUnique({ where: { id } });
     if (!lead) {
@@ -70,6 +71,7 @@ export async function POST(
       newValue: { reason: REJECTION_REASON_LABELS[data.reason] },
     });
 
+    revalidateCrm();
     return NextResponse.json({ lead: updated });
   } catch (error) {
     if (error instanceof ApiAuthError) {

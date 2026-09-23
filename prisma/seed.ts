@@ -13,6 +13,9 @@ async function hash(pw: string) {
 async function main() {
   console.log("Очистка базы...");
   await prisma.auditLog.deleteMany();
+  await prisma.payout.deleteMany();
+  await prisma.projectExpense.deleteMany();
+  await prisma.deal.deleteMany();
   await prisma.leadHandover.deleteMany();
   await prisma.leadFile.deleteMany();
   await prisma.task.deleteMany();
@@ -56,24 +59,13 @@ async function main() {
     },
   });
 
-  const manager1 = await prisma.user.create({
+  const operator3 = await prisma.user.create({
     data: {
       firstName: "Алексей",
       lastName: "Смирнов",
       login: "alexey.smirnov",
-      passwordHash: await hash("manager123"),
-      role: "MANAGER",
-      status: "ACTIVE",
-    },
-  });
-
-  const manager2 = await prisma.user.create({
-    data: {
-      firstName: "Ольга",
-      lastName: "Кузнецова",
-      login: "olga.kuznecova",
-      passwordHash: await hash("manager123"),
-      role: "MANAGER",
+      passwordHash: await hash("operator123"),
+      role: "OPERATOR",
       status: "ACTIVE",
     },
   });
@@ -88,6 +80,36 @@ async function main() {
       status: "BLOCKED",
     },
   });
+
+  const hr = await prisma.user.create({
+    data: {
+      firstName: "Анна",
+      lastName: "Егорова",
+      login: "anna.egorova",
+      passwordHash: await hash("hr123456"),
+      role: "HR",
+      status: "ACTIVE",
+    },
+  });
+
+  const hrOperator = await prisma.user.create({
+    data: {
+      firstName: "Павел",
+      lastName: "Крылов",
+      login: "pavel.krylov",
+      passwordHash: await hash("hr123456"),
+      role: "HR_OPERATOR",
+      status: "ACTIVE",
+    },
+  });
+
+  // Кадровик привёл операторов в отдел — с их сделок ему идёт процент рекрутёра.
+  await prisma.user.updateMany({
+    where: { id: { in: [operator1.id, operator2.id] } },
+    data: { hiredById: hr.id },
+  });
+
+  console.log(`Отдел кадров: ${hr.login}, совмещение: ${hrOperator.login}`);
 
   console.log("Создание компаний, контактов и лидов...");
 
@@ -153,9 +175,10 @@ async function main() {
 
     const status = statuses[i % statuses.length];
     const priority = priorities[i % priorities.length];
-    const owner = i % 5 === 4 ? manager1 : owners[i % owners.length];
+    const owner = i % 5 === 4 ? operator3 : owners[i % owners.length];
     const isHandedOver = ["HANDED_TO_MANAGER", "NEGOTIATION", "PROPOSAL_SENT", "DEAL"].includes(status);
-    const finalOwner = isHandedOver ? (i % 2 === 0 ? manager1 : manager2) : owner;
+    // Переданные лиды ведёт руководитель — менеджеров в структуре нет.
+    const finalOwner = isHandedOver ? director : owner;
 
     const lead = await prisma.lead.create({
       data: {
@@ -294,6 +317,65 @@ async function main() {
     },
   });
 
+  console.log("Закрытие сделок, выплаты и расходы по проектам...");
+
+  const wonLeads = await prisma.lead.findMany({
+    where: { status: "DEAL" },
+    include: { company: true, createdBy: { include: { hiredBy: true } } },
+  });
+
+  const dealAmounts = [180000, 240000, 120000];
+  const FINDER_PERCENT = 10;
+  const RECRUITER_PERCENT = 5;
+
+  for (const [i, wonLead] of wonLeads.entries()) {
+    const amount = dealAmounts[i % dealAmounts.length];
+    const finder = wonLead.createdBy;
+    const recruiter = finder.hiredBy;
+
+    const payouts = [];
+    if (finder.id !== director.id) {
+      payouts.push({
+        userId: finder.id,
+        role: "LEAD_FINDER" as const,
+        percent: FINDER_PERCENT,
+        amount: Math.round((amount * FINDER_PERCENT) / 100),
+        status: i === 0 ? ("PAID" as const) : ("PENDING" as const),
+        paidAt: i === 0 ? new Date() : null,
+      });
+    }
+    if (recruiter && recruiter.id !== director.id && recruiter.id !== finder.id) {
+      payouts.push({
+        userId: recruiter.id,
+        role: "RECRUITER" as const,
+        percent: RECRUITER_PERCENT,
+        amount: Math.round((amount * RECRUITER_PERCENT) / 100),
+        status: "PENDING" as const,
+      });
+    }
+
+    const domain = (wonLead.company.website ?? `${wonLead.company.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.ru`).replace(/^https?:\/\//, "");
+
+    await prisma.deal.create({
+      data: {
+        leadId: wonLead.id,
+        amount,
+        comment: "Корпоративный сайт под ключ",
+        closedById: director.id,
+        payouts: { createMany: { data: payouts } },
+        expenses: {
+          createMany: {
+            data: [
+              { type: "HOSTING", name: "Хостинг Beget", url: "https://cp.beget.com", amount: 700, period: "MONTHLY" as const },
+              { type: "DOMAIN", name: `Домен ${domain}`, url: "https://www.reg.ru/domain/new/", amount: 1800, period: "YEARLY" as const },
+              { type: "EMAIL", name: "Яндекс 360 для бизнеса", url: "https://360.yandex.ru/", amount: 290, period: "MONTHLY" as const },
+            ],
+          },
+        },
+      },
+    });
+  }
+
   console.log("Создание записей аудита...");
   await prisma.auditLog.create({
     data: {
@@ -311,8 +393,9 @@ async function main() {
   console.log("  Руководитель: director / director123");
   console.log("  Оператор: ivan.petrov / operator123");
   console.log("  Оператор: maria.sidorova / operator123");
-  console.log("  Менеджер: alexey.smirnov / manager123");
-  console.log("  Менеджер: olga.kuznecova / manager123");
+  console.log("  Оператор: alexey.smirnov / operator123");
+  console.log("  Отдел кадров: anna.egorova / hr123456");
+  console.log("  Кадры + звонки: pavel.krylov / hr123456");
   console.log("  Заблокирован: dmitry.sokolov / operator123");
 }
 

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireApiUser, ApiAuthError } from "@/lib/auth/guards";
+import { requireApiLeadsAccess, ApiAuthError } from "@/lib/auth/guards";
+import { applyAutoStatus } from "@/lib/lead-progression";
+import { revalidateCrm } from "@/lib/revalidate";
 
 const schema = z.object({
   contactId: z.string().optional(),
@@ -16,7 +18,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiUser();
+    const actor = await requireApiLeadsAccess();
     const { id } = await params;
     const lead = await prisma.lead.findUnique({ where: { id } });
     if (!lead) {
@@ -53,7 +55,11 @@ export async function POST(
       data: { decisionMakers: { connect: { id: contactId } } },
     });
 
-    return NextResponse.json({ ok: true });
+    // Найден ЛПР — лид переходит на следующий шаг воронки сам.
+    const autoStatus = await applyAutoStatus(id, actor);
+
+    revalidateCrm();
+    return NextResponse.json({ ok: true, autoStatus });
   } catch (error) {
     if (error instanceof ApiAuthError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
@@ -69,7 +75,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiUser();
+    await requireApiLeadsAccess();
     const { id } = await params;
     const body = await request.json().catch(() => null);
     const parsed = removeSchema.safeParse(body);

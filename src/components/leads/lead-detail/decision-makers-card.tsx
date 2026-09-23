@@ -9,6 +9,8 @@ import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
+import { LEAD_STATUS_LABELS } from "@/lib/labels";
+import type { LeadStatus } from "@/generated/prisma/enums";
 import type { ContactRef } from "@/types/lead";
 
 export function DecisionMakersCard({
@@ -46,7 +48,12 @@ export function DecisionMakersCard({
         toast.error("Не удалось добавить участника");
         return;
       }
-      toast.success("Участник добавлен");
+      const result = await res.json().catch(() => ({}));
+      if (result.autoStatus) {
+        toast.success("Лид перешёл на следующий этап", LEAD_STATUS_LABELS[result.autoStatus as LeadStatus]);
+      } else {
+        toast.success("Участник добавлен");
+      }
       setOpen(false);
       setForm({ firstName: "", lastName: "", position: "", phone: "" });
       setExistingId("");

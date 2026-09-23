@@ -7,18 +7,19 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import type { LeadDetail, UserRef } from "@/types/lead";
-import { NEED_LEVEL_LABELS, TIMELINE_LABELS, BUDGET_LABELS } from "@/lib/labels";
+import { NEED_LEVEL_LABELS, TIMELINE_LABELS, BUDGET_LABELS, ROLE_LABELS } from "@/lib/labels";
+import type { Role } from "@/generated/prisma/enums";
 
 export function HandoverModal({
   open,
   lead,
-  managers,
+  recipients,
   onClose,
   onSuccess,
 }: {
   open: boolean;
   lead: LeadDetail;
-  managers: UserRef[];
+  recipients: UserRef[];
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -59,7 +60,7 @@ export function HandoverModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.toUserId) {
-      toast.error("Выберите менеджера");
+      toast.error("Выберите, кому передать лид");
       return;
     }
     setLoading(true);
@@ -74,8 +75,11 @@ export function HandoverModal({
         toast.error("Не удалось передать лид", data.error);
         return;
       }
-      const manager = managers.find((m) => m.id === form.toUserId);
-      toast.success("Лид передан менеджеру", manager ? `${manager.firstName} ${manager.lastName}` : undefined);
+      const recipient = recipients.find((r) => r.id === form.toUserId);
+      toast.success(
+        "Лид передан",
+        recipient ? `${recipient.firstName} ${recipient.lastName} · ${ROLE_LABELS[recipient.role as Role]}` : undefined
+      );
       onSuccess();
     } finally {
       setLoading(false);
@@ -86,7 +90,7 @@ export function HandoverModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Передать лид менеджеру"
+      title="Передать лид"
       size="lg"
       footer={
         <>
@@ -101,15 +105,16 @@ export function HandoverModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <Select
-          label="Менеджер"
-          placeholder="Выберите менеджера"
+          label="Кому передать"
+          placeholder="Выберите сотрудника"
           value={form.toUserId}
           onChange={(e) => setForm({ ...form, toUserId: e.target.value })}
+          hint="Лид уходит руководителю вместе с брифингом"
           required
         >
-          {managers.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.firstName} {m.lastName}
+          {recipients.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.firstName} {r.lastName} — {ROLE_LABELS[r.role as Role]}
             </option>
           ))}
         </Select>

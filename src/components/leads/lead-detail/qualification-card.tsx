@@ -12,7 +12,9 @@ import {
   TIMELINE_LABELS,
   BUDGET_LABELS,
   INTEREST_LABELS,
+  LEAD_STATUS_LABELS,
 } from "@/lib/labels";
+import type { LeadStatus } from "@/generated/prisma/enums";
 import type { LeadDetail } from "@/types/lead";
 
 async function patchLead(leadId: string, data: Record<string, unknown>) {
@@ -21,7 +23,9 @@ async function patchLead(leadId: string, data: Record<string, unknown>) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  return res.ok;
+  if (!res.ok) return { ok: false as const };
+  const body = await res.json().catch(() => ({}));
+  return { ok: true as const, autoStatus: body.autoStatus as LeadStatus | null };
 }
 
 export function QualificationCard({
@@ -44,11 +48,20 @@ export function QualificationCard({
     nextContactAt: lead.nextContactAt ? lead.nextContactAt.slice(0, 10) : "",
   });
 
-  async function saveSelect(field: string, value: string) {
-    const ok = await patchLead(lead.id, { [field]: value });
-    if (ok) {
+  function reportSaved(autoStatus: LeadStatus | null | undefined) {
+    // Статус двигается сам — говорим об этом, чтобы переход не выглядел случайным.
+    if (autoStatus) {
+      toast.success("Лид перешёл на следующий этап", LEAD_STATUS_LABELS[autoStatus]);
+    } else {
       toast.success("Сохранено");
-      onChange();
+    }
+    onChange();
+  }
+
+  async function saveSelect(field: string, value: string) {
+    const result = await patchLead(lead.id, { [field]: value });
+    if (result.ok) {
+      reportSaved(result.autoStatus);
     } else {
       toast.error("Не удалось сохранить");
     }
@@ -64,10 +77,9 @@ export function QualificationCard({
         : ((lead[field as keyof LeadDetail] as string | null) ?? "");
     if (value === original) return;
     const payload = field === "nextContactAt" ? { nextContactAt: value || null } : { [field]: value };
-    const ok = await patchLead(lead.id, payload);
-    if (ok) {
-      toast.success("Сохранено");
-      onChange();
+    const result = await patchLead(lead.id, payload);
+    if (result.ok) {
+      reportSaved(result.autoStatus);
     } else {
       toast.error("Не удалось сохранить");
     }
