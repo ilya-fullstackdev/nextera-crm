@@ -5,11 +5,18 @@ import { requireApiLeadsAccess, ApiAuthError } from "@/lib/auth/guards";
 import { applyAutoStatus } from "@/lib/lead-progression";
 import { revalidateCrm } from "@/lib/revalidate";
 
-const schema = z.object({
-  type: z.enum(["CALL", "MESSAGE", "EMAIL", "MEETING", "NOTE"]),
-  comment: z.string().min(1, "Добавьте комментарий"),
-  nextContactAt: z.string().optional(),
-});
+const schema = z
+  .object({
+    type: z.enum(["CALL", "MESSAGE", "EMAIL", "MEETING", "NOTE"]),
+    // Итог звонка из быстрых кнопок — комментарий к нему не обязателен.
+    outcome: z.string().trim().max(100).optional(),
+    comment: z.string().trim().optional(),
+    // Для звонка null означает «больше не звонить» — лид уходит из очереди.
+    nextContactAt: z.string().nullable().optional(),
+  })
+  .refine((d) => d.comment || (d.type === "CALL" && d.outcome), {
+    message: "Добавьте комментарий",
+  });
 
 export async function POST(
   request: Request,
@@ -29,39 +36,52 @@ export async function POST(
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Некорректные данные" }, { status: 400 });
     }
     const data = parsed.data;
+    const isCall = data.type === "CALL";
+    const comment = [data.outcome, data.comment].filter(Boolean).join(". ");
 
     const activity = await prisma.leadActivity.create({
       data: {
         leadId: id,
         userId: actor.id,
         type: data.type,
-        comment: data.comment,
-        metadata: data.type === "CALL" ? { attempt: lead.contactAttempts + 1 } : undefined,
+        comment,
+        metadata: isCall
+          ? { attempt: lead.contactAttempts + 1, ...(data.outcome ? { outcome: data.outcome } : {}) }
+          : undefined,
       },
       include: { user: true },
     });
 
     const leadUpdate: Record<string, unknown> = {};
-    if (data.type === "CALL") {
+    if (isCall) {
       leadUpdate.contactAttempts = lead.contactAttempts + 1;
+      // Итог звонка сам заполняет квалификацию — руками ничего переключать не нужно.
+      if (data.outcome === "Вышли на ЛПР" && lead.dmStatus === "NOT_FOUND") {
+        leadUpdate.dmStatus = "FOUND";
+      }
+      if (data.outcome === "Клиент заинтересован" && lead.needLevel === "NONE") {
+        leadUpdate.needLevel = "POTENTIAL";
+      }
     }
     if (data.nextContactAt) {
       leadUpdate.nextContactAt = new Date(data.nextContactAt);
+    } else if (isCall) {
+      leadUpdate.nextContactAt = null;
     }
     if (Object.keys(leadUpdate).length > 0) {
       await prisma.lead.update({ where: { id }, data: leadUpdate });
     }
 
-    if (data.nextContactAt) {
-      await prisma.task.create({
-        data: {
+    // Очередь звонков строится по дате следующего звонка у лида. Старые задачи
+    // на звонок по этому лиду закрываем, чтобы они не висели просроченными.
+    if (isCall) {
+      await prisma.task.updateMany({
+        where: {
           leadId: id,
-          title: "Повторный контакт с клиентом",
-          type: "FOLLOW_UP",
-          dueAt: new Date(data.nextContactAt),
-          assigneeId: lead.ownerId,
-          createdById: actor.id,
+          status: "PENDING",
+          type: { in: ["CALL", "FOLLOW_UP"] },
         },
+        data: { status: "DONE", completedAt: new Date() },
       });
     }
 

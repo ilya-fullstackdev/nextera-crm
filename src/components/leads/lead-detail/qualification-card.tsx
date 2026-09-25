@@ -1,31 +1,62 @@
 "use client";
 
 import { useState } from "react";
+import { Check } from "lucide-react";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
-import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/input";
-import { DatePicker } from "@/components/ui/date-picker";
+import { ChoiceChips, type ChoiceOption } from "@/components/ui/choice-chips";
+import { Hint } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/toast";
-import {
-  DM_STATUS_LABELS,
-  NEED_LEVEL_LABELS,
-  TIMELINE_LABELS,
-  BUDGET_LABELS,
-  INTEREST_LABELS,
-  LEAD_STATUS_LABELS,
-} from "@/lib/labels";
-import type { LeadStatus } from "@/generated/prisma/enums";
+import { LEAD_STATUS_LABELS } from "@/lib/labels";
+import type { BudgetStatus, DealTimeline, DecisionMakerStatus, LeadStatus, NeedLevel } from "@/generated/prisma/enums";
 import type { LeadDetail } from "@/types/lead";
 
-async function patchLead(leadId: string, data: Record<string, unknown>) {
-  const res = await fetch(`/api/leads/${leadId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) return { ok: false as const };
-  const body = await res.json().catch(() => ({}));
-  return { ok: true as const, autoStatus: body.autoStatus as LeadStatus | null };
+/**
+ * Квалификация — четыре вопроса с вариантами ответа вместо одиннадцати полей.
+ * Каждый ответ сохраняется сразу, лид сам двигается по этапам.
+ */
+
+const DM: ChoiceOption<DecisionMakerStatus>[] = [
+  { value: "NOT_FOUND", label: "Ещё не нашли" },
+  { value: "FOUND", label: "Нашли", hint: "Знаем, кто решает, и можем с ним поговорить" },
+  { value: "MULTIPLE", label: "Решают несколько", hint: "Например, директор и маркетолог вместе" },
+];
+
+const NEED: ChoiceOption<NeedLevel>[] = [
+  { value: "NONE", label: "Не знаем" },
+  { value: "POTENTIAL", label: "Возможно", hint: "Интерес есть, но клиент пока не уверен" },
+  { value: "CONFIRMED", label: "Да, нужен", hint: "Клиент прямо сказал, что хочет сайт или доработку" },
+];
+
+const BUDGET: ChoiceOption<BudgetStatus>[] = [
+  { value: "UNKNOWN", label: "Не знаем" },
+  { value: "ESTIMATE", label: "Примерно понятен", hint: "Назвали вилку или порядок суммы" },
+  { value: "DEFINED", label: "Точно известен" },
+  { value: "NONE", label: "Денег нет" },
+];
+
+const TIMELINE: ChoiceOption<DealTimeline>[] = [
+  { value: "UNDEFINED", label: "Не ясно" },
+  { value: "NOW", label: "Сейчас" },
+  { value: "ONE_TO_THREE_MONTHS", label: "1–3 месяца" },
+  { value: "THREE_TO_SIX_MONTHS", label: "3–6 месяцев" },
+];
+
+// Руками выбрать «участвует» нельзя, но старые лиды могут его хранить — показываем как «Нашли».
+function dmValue(v: DecisionMakerStatus): DecisionMakerStatus {
+  return v === "PARTICIPATES" ? "FOUND" : v;
+}
+
+function Question({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-text-primary">
+        {title}
+        {hint && <Hint>{hint}</Hint>}
+      </p>
+      {children}
+    </div>
+  );
 }
 
 export function QualificationCard({
@@ -38,176 +69,111 @@ export function QualificationCard({
   onChange: () => void;
 }) {
   const toast = useToast();
-  const [local, setLocal] = useState({
-    needDescription: lead.needDescription ?? "",
-    currentWebsite: lead.currentWebsite ?? "",
-    problem: lead.problem ?? "",
-    desiredResult: lead.desiredResult ?? "",
-    budgetComment: lead.budgetComment ?? "",
-    currentContractor: lead.currentContractor ?? "",
-    nextContactAt: lead.nextContactAt ? lead.nextContactAt.slice(0, 10) : "",
+  const [values, setValues] = useState({
+    dmStatus: dmValue(lead.dmStatus),
+    needLevel: lead.needLevel,
+    budgetStatus: lead.budgetStatus,
+    timeline: lead.timeline,
   });
+  const [notes, setNotes] = useState(lead.needDescription ?? "");
+  const [savedNotes, setSavedNotes] = useState(lead.needDescription ?? "");
 
-  function reportSaved(autoStatus: LeadStatus | null | undefined) {
+  async function patch(data: Record<string, unknown>) {
+    const res = await fetch(`/api/leads/${lead.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      toast.error("Не удалось сохранить");
+      return false;
+    }
+    const body = await res.json().catch(() => ({}));
     // Статус двигается сам — говорим об этом, чтобы переход не выглядел случайным.
-    if (autoStatus) {
-      toast.success("Лид перешёл на следующий этап", LEAD_STATUS_LABELS[autoStatus]);
-    } else {
-      toast.success("Сохранено");
+    if (body.autoStatus) {
+      toast.success("Лид перешёл на следующий этап", LEAD_STATUS_LABELS[body.autoStatus as LeadStatus]);
     }
     onChange();
+    return true;
   }
 
-  async function saveSelect(field: string, value: string) {
-    const result = await patchLead(lead.id, { [field]: value });
-    if (result.ok) {
-      reportSaved(result.autoStatus);
-    } else {
-      toast.error("Не удалось сохранить");
-    }
+  async function choose<K extends keyof typeof values>(field: K, value: (typeof values)[K]) {
+    const prev = values[field];
+    setValues((v) => ({ ...v, [field]: value }));
+    const ok = await patch({ [field]: value });
+    if (!ok) setValues((v) => ({ ...v, [field]: prev }));
   }
 
-  async function saveText(field: keyof typeof local) {
-    const value = local[field];
-    const original =
-      field === "nextContactAt"
-        ? lead.nextContactAt
-          ? lead.nextContactAt.slice(0, 10)
-          : ""
-        : ((lead[field as keyof LeadDetail] as string | null) ?? "");
-    if (value === original) return;
-    const payload = field === "nextContactAt" ? { nextContactAt: value || null } : { [field]: value };
-    const result = await patchLead(lead.id, payload);
-    if (result.ok) {
-      reportSaved(result.autoStatus);
-    } else {
-      toast.error("Не удалось сохранить");
-    }
+  async function saveNotes() {
+    if (notes === savedNotes) return;
+    if (await patch({ needDescription: notes })) setSavedNotes(notes);
   }
+
+  const answered = [
+    values.dmStatus !== "NOT_FOUND",
+    values.needLevel !== "NONE",
+    values.budgetStatus !== "UNKNOWN",
+    values.timeline !== "UNDEFINED",
+  ].filter(Boolean).length;
 
   return (
     <Card>
-      <CardHeader title="Квалификация" description={`Попыток контакта: ${lead.contactAttempts}`} />
-      <CardBody className="space-y-3">
-        <Select
-          label="ЛПР"
-          disabled={!canEdit}
-          defaultValue={lead.dmStatus}
-          onChange={(e) => saveSelect("dmStatus", e.target.value)}
-        >
-          {Object.entries(DM_STATUS_LABELS).map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
-            </option>
-          ))}
-        </Select>
-
-        <Select
-          label="Потребность"
-          disabled={!canEdit}
-          defaultValue={lead.needLevel}
-          onChange={(e) => saveSelect("needLevel", e.target.value)}
-        >
-          {Object.entries(NEED_LEVEL_LABELS).map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
-            </option>
-          ))}
-        </Select>
-
-        <Textarea
-          label="Описание потребности"
-          disabled={!canEdit}
-          rows={2}
-          value={local.needDescription}
-          onChange={(e) => setLocal((s) => ({ ...s, needDescription: e.target.value }))}
-          onBlur={() => saveText("needDescription")}
-        />
-
-        <Textarea
-          label="Проблема"
-          disabled={!canEdit}
-          rows={2}
-          value={local.problem}
-          onChange={(e) => setLocal((s) => ({ ...s, problem: e.target.value }))}
-          onBlur={() => saveText("problem")}
-        />
-
-        <Textarea
-          label="Желаемый результат"
-          disabled={!canEdit}
-          rows={2}
-          value={local.desiredResult}
-          onChange={(e) => setLocal((s) => ({ ...s, desiredResult: e.target.value }))}
-          onBlur={() => saveText("desiredResult")}
-        />
-
-        <div className="grid grid-cols-2 gap-3">
-          <Select
-            label="Сроки"
-            disabled={!canEdit}
-            defaultValue={lead.timeline}
-            onChange={(e) => saveSelect("timeline", e.target.value)}
-          >
-            {Object.entries(TIMELINE_LABELS).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
+      <CardHeader
+        title="Что узнали о клиенте"
+        description={
+          answered === 4
+            ? "Всё заполнено — можно передавать руководителю"
+            : `Отвечено ${answered} из 4. Нажмите на вариант — сохранится сразу`
+        }
+        action={
+          <div className="flex gap-1" aria-hidden>
+            {[0, 1, 2, 3].map((i) => (
+              <span key={i} className={`h-1.5 w-5 rounded-full ${i < answered ? "bg-primary-600" : "bg-neutral-200"}`} />
             ))}
-          </Select>
-          <Select
-            label="Бюджет"
+          </div>
+        }
+      />
+      <CardBody className="space-y-4">
+        <Question title="Кто принимает решение?" hint="ЛПР — тот, кто решает, заказывать ли сайт. Обычно владелец или директор">
+          <ChoiceChips options={DM} value={values.dmStatus} disabled={!canEdit} onChange={(v) => choose("dmStatus", v)} />
+        </Question>
+        <Question title="Нужен ли клиенту сайт?">
+          <ChoiceChips options={NEED} value={values.needLevel} disabled={!canEdit} onChange={(v) => choose("needLevel", v)} />
+        </Question>
+        <Question title="Бюджет">
+          <ChoiceChips
+            options={BUDGET}
+            value={values.budgetStatus}
             disabled={!canEdit}
-            defaultValue={lead.budgetStatus}
-            onChange={(e) => saveSelect("budgetStatus", e.target.value)}
-          >
-            {Object.entries(BUDGET_LABELS).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </Select>
+            onChange={(v) => choose("budgetStatus", v)}
+          />
+        </Question>
+        <Question title="Когда нужен сайт?">
+          <ChoiceChips options={TIMELINE} value={values.timeline} disabled={!canEdit} onChange={(v) => choose("timeline", v)} />
+        </Question>
+
+        <div>
+          <Textarea
+            label="Заметки о клиенте"
+            disabled={!canEdit}
+            rows={3}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onBlur={saveNotes}
+            placeholder="Что хочет, что не нравится в текущем сайте, с кем работает сейчас…"
+          />
+          <p className="mt-1 flex items-center gap-1 text-xs text-text-tertiary">
+            {notes !== savedNotes ? (
+              "Сохранится, когда кликнете мимо поля"
+            ) : savedNotes ? (
+              <>
+                <Check className="h-3 w-3 text-success-600" /> Сохранено
+              </>
+            ) : (
+              "Руководитель увидит это при передаче лида"
+            )}
+          </p>
         </div>
-
-        <Textarea
-          label="Комментарий к бюджету"
-          disabled={!canEdit}
-          rows={1}
-          value={local.budgetComment}
-          onChange={(e) => setLocal((s) => ({ ...s, budgetComment: e.target.value }))}
-          onBlur={() => saveText("budgetComment")}
-        />
-
-        <Select
-          label="Уровень интереса"
-          disabled={!canEdit}
-          defaultValue={lead.interestLevel ?? ""}
-          onChange={(e) => saveSelect("interestLevel", e.target.value)}
-        >
-          <option value="">Не определён</option>
-          {Object.entries(INTEREST_LABELS).map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
-            </option>
-          ))}
-        </Select>
-
-        <Textarea
-          label="Текущий подрядчик"
-          disabled={!canEdit}
-          rows={1}
-          value={local.currentContractor}
-          onChange={(e) => setLocal((s) => ({ ...s, currentContractor: e.target.value }))}
-          onBlur={() => saveText("currentContractor")}
-        />
-
-        <DatePicker
-          label="Следующий контакт"
-          disabled={!canEdit}
-          value={local.nextContactAt}
-          onChange={(e) => setLocal((s) => ({ ...s, nextContactAt: e.target.value }))}
-          onBlur={() => saveText("nextContactAt")}
-        />
       </CardBody>
     </Card>
   );

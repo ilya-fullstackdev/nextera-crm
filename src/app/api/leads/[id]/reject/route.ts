@@ -50,7 +50,12 @@ export async function POST(
         status: "REJECTED",
         rejectionReason: data.reason,
         rejectionComment: data.comment,
+        nextContactAt: null,
       },
+    });
+    await prisma.task.updateMany({
+      where: { leadId: id, status: "PENDING" },
+      data: { status: "CANCELLED" },
     });
 
     await prisma.leadActivity.create({

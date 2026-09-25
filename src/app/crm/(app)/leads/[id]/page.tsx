@@ -45,14 +45,11 @@ export default async function LeadDetailPage({
 
   if (!lead) notFound();
 
-  const [contacts, handoverTargets] = await Promise.all([
-    prisma.contact.findMany({ where: { companyId: lead.companyId } }),
-    // Лид принимает руководитель.
-    prisma.user.findMany({
-      where: { role: { in: HANDOVER_ROLES }, status: "ACTIVE", deletedAt: null, id: { not: user.id } },
-      orderBy: [{ role: "asc" }, { firstName: "asc" }],
-    }),
-  ]);
+  // Лид принимает руководитель.
+  const handoverTargets = await prisma.user.findMany({
+    where: { role: { in: HANDOVER_ROLES }, status: "ACTIVE", deletedAt: null, id: { not: user.id } },
+    orderBy: [{ role: "asc" }, { firstName: "asc" }],
+  });
 
   const canEdit = user.role === "DIRECTOR" || lead.ownerId === user.id;
   const isDirector = user.role === "DIRECTOR";
@@ -116,7 +113,6 @@ export default async function LeadDetailPage({
       <div className="flex-1 overflow-y-auto">
         <LeadDetailClient
           lead={JSON.parse(JSON.stringify(lead))}
-          companyContacts={JSON.parse(JSON.stringify(contacts))}
           recipients={JSON.parse(JSON.stringify(handoverTargets))}
           canEdit={canEdit}
           canCloseDeal={canCloseDeal}

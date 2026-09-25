@@ -1,24 +1,11 @@
-import { Phone, CalendarClock } from "lucide-react";
+import { User, CalendarClock } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-
-const PRIORITY_TONE = {
-  HIGH: "danger",
-  MEDIUM: "warning",
-  LOW: "neutral",
-} as const;
-
-const PRIORITY_LABEL = {
-  HIGH: "Высокий",
-  MEDIUM: "Средний",
-  LOW: "Низкий",
-} as const;
 
 export function KanbanCard({
   companyName,
   contactName,
-  priority,
+  stage,
   owner,
   nextContactAt,
   draggable,
@@ -29,7 +16,8 @@ export function KanbanCard({
 }: {
   companyName: string;
   contactName?: string | null;
-  priority: "HIGH" | "MEDIUM" | "LOW";
+  /** Точный этап, если колонка объединяет несколько. */
+  stage?: string | null;
   owner: { firstName: string; lastName: string };
   nextContactAt?: string | null;
   draggable?: boolean;
@@ -44,23 +32,22 @@ export function KanbanCard({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onClick={onClick}
+      title="Перетащите в другую колонку, чтобы сменить этап. Нажмите, чтобы открыть"
       className={cn(
         "cursor-pointer rounded-md border border-border-subtle bg-white p-3 shadow-xs transition-all",
         "hover:border-border-strong hover:shadow-sm",
         dragging && "opacity-40"
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <p className="min-w-0 truncate text-[13px] font-semibold text-text-primary">{companyName}</p>
-        <Badge tone={PRIORITY_TONE[priority]}>{PRIORITY_LABEL[priority]}</Badge>
-      </div>
+      <p className="truncate text-[13px] font-semibold text-text-primary">{companyName}</p>
       {contactName && (
         <p className="mt-1 flex items-center gap-1 truncate text-xs text-text-secondary">
-          <Phone className="h-3 w-3 shrink-0" />
+          <User className="h-3 w-3 shrink-0" />
           {contactName}
         </p>
       )}
-      <div className="mt-3 flex items-center justify-between">
+      {stage && <p className="mt-1.5 text-[11px] font-medium text-primary-700">{stage}</p>}
+      <div className="mt-2.5 flex items-center justify-between">
         {nextContactAt ? (
           <span className="flex items-center gap-1 text-[11px] text-text-tertiary">
             <CalendarClock className="h-3 w-3" />

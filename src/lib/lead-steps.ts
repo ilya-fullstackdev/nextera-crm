@@ -95,8 +95,8 @@ export function nextStep(facts: LeadFacts, options: { canCloseDeal: boolean; has
 
   if (!facts.hasContactActivity && facts.contactAttempts === 0) {
     return {
-      title: "Позвонить и записать результат",
-      description: "После первого звонка, письма или встречи лид перейдёт в «Первый контакт»",
+      title: "Позвонить клиенту",
+      description: "Позвоните и нажмите, чем закончился разговор. Следующий звонок назначится сам",
       action: "activity",
       actionLabel: "Записать звонок",
     };
@@ -104,29 +104,29 @@ export function nextStep(facts: LeadFacts, options: { canCloseDeal: boolean; has
 
   if (!isDmFound(facts)) {
     return {
-      title: "Выйти на ЛПР",
+      title: "Выйти на того, кто принимает решение",
       description:
-        "Добавьте лицо, принимающее решение, в блоке «Квалификация» или смените статус ЛПР — лид перейдёт в «ЛПР найден»",
-      action: "decisionMaker",
-      actionLabel: "Добавить ЛПР",
+        "Когда поговорите с директором или владельцем, выберите итог «Вышли на ЛПР» — остальное отметится само",
+      action: "activity",
+      actionLabel: "Записать звонок",
     };
   }
 
   if (facts.needLevel === "NONE") {
     return {
       title: "Выяснить потребность",
-      description: "Заполните «Потребность» и её описание в блоке «Квалификация» — это главный признак живого лида",
+      description: "Ответьте в блоке «Что узнали о клиенте»: нужен ли ему сайт. Это главный признак живого лида",
       action: "qualification",
-      actionLabel: "Заполнить",
+      actionLabel: "Ответить",
     };
   }
 
   if (facts.budgetStatus === "UNKNOWN" && facts.timeline === "UNDEFINED") {
     return {
       title: "Уточнить бюджет и сроки",
-      description: "Достаточно чего-то одного: после этого лид перейдёт в «Квалификация»",
+      description: "Достаточно чего-то одного — нажмите вариант в блоке «Что узнали о клиенте»",
       action: "qualification",
-      actionLabel: "Заполнить",
+      actionLabel: "Ответить",
     };
   }
 
@@ -140,9 +140,8 @@ export function nextStep(facts: LeadFacts, options: { canCloseDeal: boolean; has
         }
       : {
           title: "Лид у руководителя",
-          description: "Дальше по нему работает руководитель. Записывайте звонки и встречи в историю",
-          action: "activity",
-          actionLabel: "Записать активность",
+          description: "Дальше по нему работает руководитель. Если клиент перезвонит вам — запишите звонок",
+          action: "none",
         };
   }
 
@@ -155,7 +154,7 @@ export function nextStep(facts: LeadFacts, options: { canCloseDeal: boolean; has
       }
     : {
         title: "Передать лид руководителю",
-        description: "Квалификация собрана — оформите брифинг, и лид уйдёт дальше вместе с историей",
+        description: "Клиент заинтересован и всё нужное известно. Брифинг для руководителя соберётся сам",
         action: "handover",
         actionLabel: "Передать",
       };

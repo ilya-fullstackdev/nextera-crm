@@ -37,7 +37,7 @@ export function ActivityTimelinePanel({
   handovers: HandoverRef[];
 }) {
   if (activities.length === 0) {
-    return <EmptyState icon={<StickyNote />} title="Пока нет активности" description="Добавьте первую активность или задачу по лиду" />;
+    return <EmptyState icon={<StickyNote />} title="Пока пусто" description="Здесь появятся звонки и заметки по клиенту" />;
   }
 
   const entries: TimelineEntry[] = activities.map((activity) => {
@@ -70,8 +70,6 @@ export function ActivityTimelinePanel({
   });
 
   return (
-    <div className="rounded-lg border border-border-subtle bg-white p-5 shadow-xs">
-      <Timeline entries={entries} />
-    </div>
+    <Timeline entries={entries} />
   );
 }

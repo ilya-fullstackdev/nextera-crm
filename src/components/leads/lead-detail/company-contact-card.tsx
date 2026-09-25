@@ -1,7 +1,9 @@
-import { Globe, MapPin, Tag, Calendar, Briefcase, Phone, Send, Mail } from "lucide-react";
+import { Globe, MapPin, Tag, Calendar, Briefcase, Pencil } from "lucide-react";
 import { Card, CardHeader, CardBody } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { LEAD_SOURCE_LABELS } from "@/lib/labels";
 import { formatDate } from "@/lib/format";
+import { normalizeUrl } from "@/lib/finance";
 import type { LeadDetail } from "@/types/lead";
 
 function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
@@ -16,23 +18,28 @@ function Row({ icon, label, value }: { icon: React.ReactNode; label: string; val
   );
 }
 
-export function CompanyContactCard({ lead }: { lead: LeadDetail }) {
+export function CompanyContactCard({ lead, onEdit }: { lead: LeadDetail; onEdit?: () => void }) {
   return (
     <Card>
-      <CardHeader title="Компания" />
+      <CardHeader
+        title="О компании"
+        action={
+          onEdit && (
+            <Button variant="ghost" size="sm" icon={<Pencil />} onClick={onEdit} title="Изменить название, телефон и другие данные">
+              Изменить
+            </Button>
+          )
+        }
+      />
       <CardBody className="pt-2">
-        <Row icon={<Briefcase />} label="Ниша" value={lead.company.niche ?? "—"} />
-        <Row icon={<MapPin />} label="Город" value={lead.company.city ?? "—"} />
+        <Row icon={<Briefcase />} label="Ниша" value={lead.company.niche || "—"} />
+        <Row icon={<MapPin />} label="Город" value={lead.company.city || "—"} />
         <Row
           icon={<Globe />}
           label="Сайт"
           value={
             lead.company.website ? (
-              <a
-                href={lead.company.website.startsWith("http") ? lead.company.website : `https://${lead.company.website}`}
-                target="_blank"
-                className="text-primary-600 hover:underline"
-              >
+              <a href={normalizeUrl(lead.company.website)} target="_blank" className="text-primary-600 hover:underline">
                 {lead.company.website}
               </a>
             ) : (
@@ -40,25 +47,13 @@ export function CompanyContactCard({ lead }: { lead: LeadDetail }) {
             )
           }
         />
-        <Row icon={<Tag />} label="Источник" value={LEAD_SOURCE_LABELS[lead.source]} />
-        <Row icon={<Calendar />} label="Дата добавления" value={formatDate(lead.createdAt)} />
+        <Row icon={<Tag />} label="Где нашли" value={LEAD_SOURCE_LABELS[lead.source]} />
+        <Row
+          icon={<Calendar />}
+          label="Добавлен"
+          value={`${formatDate(lead.createdAt)} · ${lead.createdBy.firstName} ${lead.createdBy.lastName}`}
+        />
       </CardBody>
-
-      {lead.contact && (
-        <>
-          <div className="border-t border-border-subtle px-5 py-3">
-            <p className="text-[13px] font-semibold text-text-primary">
-              {lead.contact.firstName} {lead.contact.lastName ?? ""}
-            </p>
-            <p className="text-xs text-text-tertiary">{lead.contact.position ?? "Должность не указана"}</p>
-          </div>
-          <CardBody className="pt-0">
-            {lead.contact.phone && <Row icon={<Phone />} label="Телефон" value={lead.contact.phone} />}
-            {lead.contact.telegram && <Row icon={<Send />} label="Telegram" value={lead.contact.telegram} />}
-            {lead.contact.email && <Row icon={<Mail />} label="Email" value={lead.contact.email} />}
-          </CardBody>
-        </>
-      )}
     </Card>
   );
 }

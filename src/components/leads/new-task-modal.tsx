@@ -7,7 +7,6 @@ import { Select } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { TASK_TYPE_LABELS } from "@/lib/labels";
 
 interface UserOption {
   id: string;
@@ -43,7 +42,7 @@ export function NewTaskModal({
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     title: "",
-    type: "CALL",
+    type: "OTHER",
     dueAt: defaultDueAt(),
     comment: "",
     assigneeId: defaultAssigneeId ?? "",
@@ -53,7 +52,7 @@ export function NewTaskModal({
     if (open) {
       setForm({
         title: "",
-        type: "CALL",
+        type: "OTHER",
         dueAt: defaultDueAt(),
         comment: "",
         assigneeId: defaultAssigneeId ?? "",
@@ -71,14 +70,14 @@ export function NewTaskModal({
       const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, leadId }),
+        body: JSON.stringify({ ...form, dueAt: new Date(form.dueAt).toISOString(), leadId }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         toast.error("Не удалось создать задачу", data.error);
         return;
       }
-      toast.success("Задача создана", form.title);
+      toast.success("Напоминание создано", form.title);
       onSuccess();
     } finally {
       setLoading(false);
@@ -89,7 +88,8 @@ export function NewTaskModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={title ?? "Новая задача"}
+      title={title ?? "Напоминание"}
+      description="Для встреч, писем и других дел. Звонки назначаются в окне звонка"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -103,28 +103,20 @@ export function NewTaskModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
-          label="Название задачи"
+          label="Что сделать"
+          placeholder="Например: отправить КП на почту"
           required
           autoFocus
           value={form.title}
           onChange={(e) => setForm({ ...form, title: e.target.value })}
         />
-        <div className="grid grid-cols-2 gap-3">
-          <Select label="Тип" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
-            {Object.entries(TASK_TYPE_LABELS).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </Select>
-          <DatePicker
-            label="Дата и время"
-            withTime
-            required
-            value={form.dueAt}
-            onChange={(e) => setForm({ ...form, dueAt: e.target.value })}
-          />
-        </div>
+        <DatePicker
+          label="Когда напомнить"
+          withTime
+          required
+          value={form.dueAt}
+          onChange={(e) => setForm({ ...form, dueAt: e.target.value })}
+        />
         <Select
           label="Ответственный"
           value={form.assigneeId}

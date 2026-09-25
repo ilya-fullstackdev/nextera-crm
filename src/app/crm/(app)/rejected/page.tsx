@@ -1,13 +1,6 @@
-import { LeadsListPage } from "@/components/leads/leads-list-page";
-import type { LeadsSearchParams } from "@/lib/leads-query";
+import { redirect } from "next/navigation";
 
-export default function RejectedPage({ searchParams }: { searchParams: Promise<LeadsSearchParams> }) {
-  return (
-    <LeadsListPage
-      title="Отказы"
-      baseStatuses={["REJECTED"]}
-      searchParams={searchParams}
-      hideStatusFilter
-    />
-  );
+// Раздел стал вкладкой в общем списке лидов.
+export default function Page() {
+  redirect("/crm/leads?view=rejected");
 }

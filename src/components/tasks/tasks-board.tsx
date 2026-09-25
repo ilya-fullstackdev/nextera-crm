@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, CheckCircle2, Circle, CheckSquare } from "lucide-react";
+import { Plus, CheckCircle2, Circle, CheckSquare, PhoneCall } from "lucide-react";
 import { Tabs } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/toast";
 import { TASK_TYPE_LABELS } from "@/lib/labels";
 import { formatDateTime } from "@/lib/format";
 import { NewTaskModal } from "@/components/leads/new-task-modal";
+import { QuickCallModal, type QuickCallTarget } from "@/components/leads/quick-call-modal";
 
 interface TaskItem {
   id: string;
@@ -22,7 +23,10 @@ interface TaskItem {
   dueAt: string;
   comment: string | null;
   leadId: string | null;
-  lead: { company: { name: string } } | null;
+  lead: {
+    company: { name: string };
+    contact: { firstName: string; lastName: string | null; phone: string | null } | null;
+  } | null;
   assignee: { firstName: string; lastName: string };
 }
 
@@ -41,6 +45,18 @@ export function TasksBoard({
   const toast = useToast();
   const [tab, setTab] = useState(overdue.length > 0 ? "overdue" : "today");
   const [taskOpen, setTaskOpen] = useState(false);
+  const [callTarget, setCallTarget] = useState<QuickCallTarget | null>(null);
+
+  function openCall(task: TaskItem) {
+    if (!task.lead || !task.leadId) return;
+    const c = task.lead.contact;
+    setCallTarget({
+      leadId: task.leadId,
+      companyName: task.lead.company.name,
+      contactName: c ? `${c.firstName} ${c.lastName ?? ""}`.trim() : null,
+      phone: c?.phone,
+    });
+  }
 
   async function toggleStatus(task: TaskItem) {
     const nextStatus = task.status === "PENDING" ? "DONE" : "PENDING";
@@ -114,11 +130,26 @@ export function TasksBoard({
                   </div>
                   {task.comment && <p className="mt-1 text-[13px] text-text-secondary">{task.comment}</p>}
                 </div>
+                {/* Звонок по задаче: записанный звонок сам закрывает задачу */}
+                {task.status === "PENDING" && task.lead && (task.type === "CALL" || task.type === "FOLLOW_UP") && (
+                  <Button variant="outline" size="sm" icon={<PhoneCall />} onClick={() => openCall(task)}>
+                    Звонок
+                  </Button>
+                )}
               </div>
             ))}
           </div>
         )}
       </div>
+
+      <QuickCallModal
+        target={callTarget}
+        onClose={() => setCallTarget(null)}
+        onSuccess={() => {
+          setCallTarget(null);
+          router.refresh();
+        }}
+      />
 
       <NewTaskModal
         open={taskOpen}

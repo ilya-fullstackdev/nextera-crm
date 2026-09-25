@@ -14,7 +14,7 @@ export default async function TasksPage() {
   const tasks = await prisma.task.findMany({
     where: filter,
     orderBy: { dueAt: "asc" },
-    include: { assignee: true, lead: { include: { company: true } } },
+    include: { assignee: true, lead: { include: { company: true, contact: true } } },
   });
 
   const overdue = tasks.filter((t) => t.status === "PENDING" && t.dueAt < todayStart);

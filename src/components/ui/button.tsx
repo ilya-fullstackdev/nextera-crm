@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger" | "outline";
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "dangerOutline" | "outline";
 type Size = "sm" | "md" | "lg" | "icon";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -22,6 +22,9 @@ const variantClasses: Record<Variant, string> = {
     "bg-transparent text-primary-700 border border-primary-200 hover:bg-primary-50 disabled:text-text-tertiary disabled:border-border-default",
   ghost:
     "bg-transparent text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:text-text-tertiary",
+  // Заметное, но не главное опасное действие — например, «Отказ».
+  dangerOutline:
+    "bg-white text-danger-600 border border-danger-100 hover:border-danger-500 hover:bg-danger-50 shadow-xs disabled:text-text-tertiary",
   danger:
     "bg-danger-600 text-white hover:bg-danger-700 active:bg-danger-700 shadow-xs disabled:bg-neutral-300",
 };

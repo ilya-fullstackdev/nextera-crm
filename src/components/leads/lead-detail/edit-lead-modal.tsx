@@ -6,9 +6,25 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import { PRIORITY_LABELS, LEAD_SOURCE_LABELS } from "@/lib/labels";
+import { LEAD_SOURCE_LABELS } from "@/lib/labels";
 import type { LeadDetail } from "@/types/lead";
 
+function formFrom(lead: LeadDetail) {
+  return {
+    companyName: lead.company.name,
+    contactFirstName: lead.contact?.firstName ?? "",
+    contactPhone: lead.contact?.phone ?? "",
+    contactPosition: lead.contact?.position ?? "",
+    contactTelegram: lead.contact?.telegram ?? "",
+    contactEmail: lead.contact?.email ?? "",
+    companyWebsite: lead.company.website ?? "",
+    companyCity: lead.company.city ?? "",
+    companyNiche: lead.company.niche ?? "",
+    source: lead.source,
+  };
+}
+
+/** Компания и контакт — в одной форме, без отдельных разделов «Компании» и «Контакты». */
 export function EditLeadModal({
   open,
   lead,
@@ -22,30 +38,25 @@ export function EditLeadModal({
 }) {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({
-    companyName: lead.company.name,
-    companyNiche: lead.company.niche ?? "",
-    companyCity: lead.company.city ?? "",
-    companyWebsite: lead.company.website ?? "",
-    priority: lead.priority,
-    source: lead.source,
-  });
+  const [form, setForm] = useState(() => formFrom(lead));
 
   useEffect(() => {
-    if (open) {
-      setForm({
-        companyName: lead.company.name,
-        companyNiche: lead.company.niche ?? "",
-        companyCity: lead.company.city ?? "",
-        companyWebsite: lead.company.website ?? "",
-        priority: lead.priority,
-        source: lead.source,
-      });
-    }
+    if (open) setForm(formFrom(lead));
   }, [open, lead]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function field(key: keyof typeof form) {
+    return {
+      value: form[key],
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: e.target.value }),
+    };
+  }
+
+  async function handleSubmit(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!form.companyName.trim()) {
+      toast.error("Укажите название компании");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`/api/leads/${lead.id}`, {
@@ -69,45 +80,43 @@ export function EditLeadModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Редактировать лид"
+      title="Клиент и контакты"
+      size="lg"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Отмена
           </Button>
-          <Button variant="primary" loading={loading} onClick={handleSubmit}>
+          <Button variant="primary" loading={loading} onClick={() => handleSubmit()}>
             Сохранить
           </Button>
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          label="Название компании"
-          value={form.companyName}
-          onChange={(e) => setForm({ ...form, companyName: e.target.value })}
-        />
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="Ниша" value={form.companyNiche} onChange={(e) => setForm({ ...form, companyNiche: e.target.value })} />
-          <Input label="Город" value={form.companyCity} onChange={(e) => setForm({ ...form, companyCity: e.target.value })} />
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <Input label="Название компании" {...field("companyName")} />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Input label="Телефон" type="tel" inputMode="tel" {...field("contactPhone")} />
+          <Input label="Имя контакта" {...field("contactFirstName")} />
+          <Input label="Должность" {...field("contactPosition")} />
+          <Input label="Telegram" {...field("contactTelegram")} />
+          <Input label="Email" {...field("contactEmail")} />
+          <Input label="Сайт" {...field("companyWebsite")} />
+          <Input label="Город" {...field("companyCity")} />
+          <Input label="Ниша" {...field("companyNiche")} />
         </div>
-        <Input label="Сайт" value={form.companyWebsite} onChange={(e) => setForm({ ...form, companyWebsite: e.target.value })} />
-        <div className="grid grid-cols-2 gap-3">
-          <Select label="Приоритет" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value as typeof form.priority })}>
-            {Object.entries(PRIORITY_LABELS).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </Select>
-          <Select label="Источник" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value as typeof form.source })}>
-            {Object.entries(LEAD_SOURCE_LABELS).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </Select>
-        </div>
+        <Select
+          label="Где нашли клиента"
+          value={form.source}
+          onChange={(e) => setForm({ ...form, source: e.target.value as typeof form.source })}
+        >
+          {Object.entries(LEAD_SOURCE_LABELS).map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </Select>
+        <button type="submit" className="hidden" />
       </form>
     </Modal>
   );

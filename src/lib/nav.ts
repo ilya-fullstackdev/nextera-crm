@@ -1,20 +1,15 @@
 import type { Role } from "@/generated/prisma/enums";
 import {
-  LayoutDashboard,
+  PhoneCall,
   Users2,
   CheckSquare,
   KanbanSquare,
-  Building2,
-  Contact2,
-  Send,
-  XCircle,
-  Handshake,
-  FileText,
   UserCog,
   Wallet,
   Receipt,
   BarChart3,
   ScrollText,
+  LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
 
@@ -24,55 +19,55 @@ export interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
+  /** Подсказка при наведении: что внутри раздела. */
+  hint: string;
 }
 
+/**
+ * Меню — только то, чем пользуются каждый день. Переданные, отказы, сделки
+ * и переговоры — вкладки в «Лидах»; компании и контакты живут в карточке лида.
+ */
 export function getNavItems(role: Role): NavItem[] {
-  const home: NavItem = { label: "Главная", href: "/crm", icon: LayoutDashboard };
-  const tasks: NavItem = {
-    label: role === "OPERATOR" || role === "HR_OPERATOR" ? "Мои задачи" : "Задачи",
-    href: "/crm/tasks",
-    icon: CheckSquare,
+  const calls: NavItem = {
+    label: "Звонки",
+    href: "/crm",
+    icon: PhoneCall,
+    hint: "Кому звонить сегодня. Начните день отсюда",
   };
-  const pipeline: NavItem = { label: "Воронка", href: "/crm/pipeline", icon: KanbanSquare };
-  const companies: NavItem = { label: "Компании", href: "/crm/companies", icon: Building2 };
-  const contacts: NavItem = { label: "Контакты", href: "/crm/contacts", icon: Contact2 };
-  const rejected: NavItem = { label: "Отказы", href: "/crm/rejected", icon: XCircle };
-  const employees: NavItem = { label: "Сотрудники", href: "/crm/employees", icon: UserCog };
+  const leads: NavItem = {
+    label: role === "DIRECTOR" ? "Лиды" : "Мои лиды",
+    href: "/crm/leads",
+    icon: Users2,
+    hint: "Все клиенты: в работе, у руководителя, сделки и отказы",
+  };
+  const employees: NavItem = {
+    label: "Сотрудники",
+    href: "/crm/employees",
+    icon: UserCog,
+    hint: "Наём и учётные записи сотрудников",
+  };
 
   // Отдел кадров занимается только наймом — лиды и клиентская база ему не нужны.
   if (role === "HR") {
-    return [home, employees, tasks];
+    return [
+      { label: "Главная", href: "/crm", icon: LayoutDashboard, hint: "Сводка по найму" },
+      employees,
+      { label: "Задачи", href: "/crm/tasks", icon: CheckSquare, hint: "Ваши напоминания" },
+    ];
   }
 
-  if (role === "OPERATOR" || role === "HR_OPERATOR") {
-    const items = [
-      home,
-      { label: "Лиды", href: "/crm/leads", icon: Users2 },
-      tasks,
-      pipeline,
-      companies,
-      contacts,
-      { label: "Переданные", href: "/crm/handed-over", icon: Send },
-      rejected,
-    ];
-    // Совмещённая должность дополнительно ведёт найм в отдел холодных звонков.
-    return role === "HR_OPERATOR" ? [...items, employees] : items;
-  }
+  if (role === "OPERATOR") return [calls, leads];
+  // Совмещённая должность дополнительно ведёт найм в отдел холодных звонков.
+  if (role === "HR_OPERATOR") return [calls, leads, employees];
 
   return [
-    home,
-    { label: "Лиды", href: "/crm/leads", icon: Users2 },
-    tasks,
-    pipeline,
-    companies,
-    contacts,
-    { label: "Переговоры", href: "/crm/negotiations", icon: Handshake },
-    { label: "Сделки", href: "/crm/deals", icon: FileText },
-    rejected,
-    { label: "Выплаты", href: "/crm/payouts", icon: Wallet },
-    { label: "Расходы", href: "/crm/expenses", icon: Receipt },
+    calls,
+    leads,
+    { label: "Воронка", href: "/crm/pipeline", icon: KanbanSquare, hint: "Все лиды по пяти этапам — от обзвона до сделки. Карточки можно перетаскивать" },
+    { label: "Выплаты", href: "/crm/payouts", icon: Wallet, hint: "Проценты сотрудникам с закрытых сделок" },
+    { label: "Расходы", href: "/crm/expenses", icon: Receipt, hint: "Хостинг, домены и другие регулярные расходы" },
     employees,
-    { label: "Отчёты", href: "/crm/reports", icon: BarChart3 },
-    { label: "Логи", href: "/crm/logs", icon: ScrollText },
+    { label: "Отчёты", href: "/crm/reports", icon: BarChart3, hint: "Статистика по звонкам, лидам и сделкам" },
+    { label: "Журнал", href: "/crm/logs", icon: ScrollText, hint: "Кто и что менял в системе" },
   ];
 }

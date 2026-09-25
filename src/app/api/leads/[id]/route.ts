@@ -34,6 +34,9 @@ const statusSchema = z.enum([
 const updateSchema = z.object({
   status: statusSchema.optional(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+  source: z
+    .enum(["YANDEX_MAPS", "GOOGLE_MAPS", "INSTAGRAM", "TIKTOK", "TELEGRAM", "WEBSITE", "REFERRAL", "MANUAL_SEARCH", "OTHER"])
+    .optional(),
   ownerId: z.string().optional(),
   dmStatus: z.enum(["NOT_FOUND", "FOUND", "PARTICIPATES", "MULTIPLE"]).optional(),
   needLevel: z.enum(["NONE", "POTENTIAL", "CONFIRMED"]).optional(),
@@ -51,6 +54,11 @@ const updateSchema = z.object({
   companyNiche: z.string().optional(),
   companyCity: z.string().optional(),
   companyWebsite: z.string().optional(),
+  contactFirstName: z.string().optional(),
+  contactPhone: z.string().optional(),
+  contactPosition: z.string().optional(),
+  contactTelegram: z.string().optional(),
+  contactEmail: z.string().optional(),
 });
 
 export async function PATCH(
@@ -83,7 +91,18 @@ export async function PATCH(
       return NextResponse.json({ error: "Изменить ответственного может только руководитель" }, { status: 403 });
     }
 
-    const { companyName, companyNiche, companyCity, companyWebsite, ...leadFields } = data;
+    const {
+      companyName,
+      companyNiche,
+      companyCity,
+      companyWebsite,
+      contactFirstName,
+      contactPhone,
+      contactPosition,
+      contactTelegram,
+      contactEmail,
+      ...leadFields
+    } = data;
 
     if (companyName || companyNiche !== undefined || companyCity !== undefined || companyWebsite !== undefined) {
       await prisma.company.update({
@@ -97,7 +116,28 @@ export async function PATCH(
       });
     }
 
+    // Контакт правится в той же форме, что и компания.
+    const contactData = {
+      ...(contactFirstName !== undefined ? { firstName: contactFirstName.trim() } : {}),
+      ...(contactPhone !== undefined ? { phone: contactPhone } : {}),
+      ...(contactPosition !== undefined ? { position: contactPosition } : {}),
+      ...(contactTelegram !== undefined ? { telegram: contactTelegram } : {}),
+      ...(contactEmail !== undefined ? { email: contactEmail } : {}),
+    };
+    let newContactId: string | undefined;
+    if (Object.keys(contactData).length > 0) {
+      if (lead.contactId) {
+        await prisma.contact.update({ where: { id: lead.contactId }, data: contactData });
+      } else if (contactFirstName?.trim() || contactPhone?.trim()) {
+        const created = await prisma.contact.create({
+          data: { firstName: "", ...contactData, companyId: lead.companyId },
+        });
+        newContactId = created.id;
+      }
+    }
+
     const updateData: Record<string, unknown> = { ...leadFields };
+    if (newContactId) updateData.contactId = newContactId;
     if (data.nextContactAt !== undefined) {
       updateData.nextContactAt = data.nextContactAt ? new Date(data.nextContactAt) : null;
     }

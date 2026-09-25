@@ -6,9 +6,19 @@ import { logAudit } from "@/lib/audit";
 import { revalidateCrm } from "@/lib/revalidate";
 import { fullName } from "@/lib/auth/current-user";
 import { canReceiveHandover } from "@/lib/permissions";
+import { BUDGET_LABELS, NEED_LEVEL_LABELS, TIMELINE_LABELS } from "@/lib/labels";
+
+function tomorrowMorning() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(10, 0, 0, 0);
+  return d;
+}
 
 const schema = z.object({
-  toUserId: z.string().min(1, "Выберите, кому передать лид"),
+  // Если не указан — лид уходит единственному руководителю.
+  toUserId: z.string().optional(),
+  comment: z.string().optional(),
   dmInfo: z.string().optional(),
   needSummary: z.string().optional(),
   situation: z.string().optional(),
@@ -28,7 +38,13 @@ export async function POST(
   try {
     const actor = await requireApiLeadsAccess();
     const { id } = await params;
-    const lead = await prisma.lead.findUnique({ where: { id } });
+    const lead = await prisma.lead.findUnique({
+      where: { id },
+      include: {
+        contact: true,
+        activities: { where: { type: "CALL" }, orderBy: { createdAt: "desc" }, take: 5 },
+      },
+    });
     if (!lead) {
       return NextResponse.json({ error: "Лид не найден" }, { status: 404 });
     }
@@ -43,7 +59,12 @@ export async function POST(
     }
     const data = parsed.data;
 
-    const toUser = await prisma.user.findUnique({ where: { id: data.toUserId } });
+    const toUser = data.toUserId
+      ? await prisma.user.findUnique({ where: { id: data.toUserId } })
+      : await prisma.user.findFirst({
+          where: { role: "DIRECTOR", status: "ACTIVE", deletedAt: null, id: { not: actor.id } },
+          orderBy: { createdAt: "asc" },
+        });
     // Лид принимает руководитель.
     if (!toUser || toUser.deletedAt || toUser.status !== "ACTIVE" || !canReceiveHandover(toUser.role)) {
       return NextResponse.json({ error: "Выбранный сотрудник недоступен" }, { status: 400 });
@@ -52,22 +73,38 @@ export async function POST(
       return NextResponse.json({ error: "Нельзя передать лид самому себе" }, { status: 400 });
     }
 
+    // Брифинг собирается из карточки сам: оператору достаточно одного комментария.
+    const brief = {
+      dmInfo:
+        data.dmInfo ??
+        (lead.contact
+          ? [`${lead.contact.firstName} ${lead.contact.lastName ?? ""}`.trim(), lead.contact.position, lead.contact.phone]
+              .filter(Boolean)
+              .join(", ")
+          : undefined),
+      needSummary: data.needSummary ?? (lead.needDescription || NEED_LEVEL_LABELS[lead.needLevel]),
+      situation: data.situation ?? (lead.currentWebsite ? `Текущий сайт: ${lead.currentWebsite}` : undefined),
+      problem: data.problem ?? lead.problem ?? undefined,
+      desiredResult: data.desiredResult ?? lead.desiredResult ?? undefined,
+      timeline: data.timeline ?? TIMELINE_LABELS[lead.timeline],
+      budget: data.budget ?? `${BUDGET_LABELS[lead.budgetStatus]}${lead.budgetComment ? ". " + lead.budgetComment : ""}`,
+      discussed:
+        data.discussed ??
+        (lead.activities
+          .map((a) => a.comment)
+          .filter(Boolean)
+          .join("\n") || undefined),
+      objections: data.objections,
+      nextStep: data.nextStep ?? data.comment,
+    };
+
     const [, , updatedLead] = await prisma.$transaction([
       prisma.leadHandover.create({
         data: {
           leadId: id,
           fromUserId: actor.id,
           toUserId: toUser.id,
-          dmInfo: data.dmInfo,
-          needSummary: data.needSummary,
-          situation: data.situation,
-          problem: data.problem,
-          desiredResult: data.desiredResult,
-          timeline: data.timeline,
-          budget: data.budget,
-          discussed: data.discussed,
-          objections: data.objections,
-          nextStep: data.nextStep,
+          ...brief,
         },
       }),
       prisma.leadActivity.create({
@@ -75,28 +112,16 @@ export async function POST(
           leadId: id,
           userId: actor.id,
           type: "HANDOVER",
-          comment: `${fullName(actor)} передал лид ${fullName(toUser)}`,
+          comment: `${fullName(actor)} передал лид ${fullName(toUser)}${data.comment ? `. ${data.comment}` : ""}`,
           metadata: { fromUserId: actor.id, toUserId: toUser.id },
         },
       }),
       prisma.lead.update({
         where: { id },
-        data: { ownerId: toUser.id, status: "HANDED_TO_MANAGER", handedToManagerAt: new Date() },
+        // Лид встаёт в очередь звонков руководителя на завтрашнее утро.
+        data: { ownerId: toUser.id, status: "HANDED_TO_MANAGER", handedToManagerAt: new Date(), nextContactAt: tomorrowMorning() },
       }),
     ]);
-
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 1);
-    await prisma.task.create({
-      data: {
-        leadId: id,
-        title: "Связаться с переданным клиентом",
-        type: "CALL",
-        dueAt: dueDate,
-        assigneeId: toUser.id,
-        createdById: actor.id,
-      },
-    });
 
     await logAudit({
       actor,

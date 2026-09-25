@@ -11,7 +11,8 @@ const createSchema = z.object({
   niche: z.string().optional(),
   city: z.string().optional(),
   website: z.string().optional(),
-  source: z.enum([
+  source: z
+    .enum([
     "YANDEX_MAPS",
     "GOOGLE_MAPS",
     "INSTAGRAM",
@@ -21,7 +22,8 @@ const createSchema = z.object({
     "REFERRAL",
     "MANUAL_SEARCH",
     "OTHER",
-  ]),
+  ])
+    .default("MANUAL_SEARCH"),
   priority: z.enum(["LOW", "MEDIUM", "HIGH"]).default("MEDIUM"),
   contactFirstName: z.string().optional(),
   contactLastName: z.string().optional(),
@@ -91,11 +93,11 @@ export async function POST(request: Request) {
     }
 
     let contact = null;
-    if (data.contactFirstName) {
+    if (data.contactFirstName || data.contactPhone) {
       contact = await prisma.contact.create({
         data: {
           companyId: company.id,
-          firstName: data.contactFirstName,
+          firstName: data.contactFirstName?.trim() ?? "",
           lastName: data.contactLastName,
           position: data.contactPosition,
           phone: data.contactPhone,
@@ -127,20 +129,7 @@ export async function POST(request: Request) {
       },
     });
 
-    // Задача ставится сама на того, кто завёл лид, и сразу на сегодня.
-    const dueToday = new Date();
-    dueToday.setHours(18, 0, 0, 0);
-    await prisma.task.create({
-      data: {
-        leadId: lead.id,
-        title: `Позвонить: ${company.name}`,
-        type: "CALL",
-        dueAt: dueToday,
-        comment: contact?.phone ? `Телефон: ${contact.phone}` : undefined,
-        assigneeId: actor.id,
-        createdById: actor.id,
-      },
-    });
+    // Задачу не создаём: новый лид сам стоит в очереди звонков, пока по нему не позвонили.
 
     await logAudit({
       actor,

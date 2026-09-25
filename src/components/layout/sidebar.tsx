@@ -108,7 +108,7 @@ function NavLink({ item, active, collapsed }: { item: NavItem; active: boolean; 
   return (
     <Link
       href={item.href}
-      title={collapsed ? item.label : undefined}
+      title={collapsed ? `${item.label} — ${item.hint}` : item.hint}
       className={cn(
         "flex items-center gap-2.5 rounded-md py-2 text-[13px] font-medium transition-colors",
         collapsed ? "justify-center px-0" : "px-2.5",

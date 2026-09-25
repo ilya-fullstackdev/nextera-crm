@@ -58,6 +58,21 @@ export const LEAD_STATUS_TONE: Record<LeadStatus, "neutral" | "primary" | "succe
   CALLBACK_LATER: "neutral",
 };
 
+/** Что значит статус — показывается при наведении на бейдж. */
+export const LEAD_STATUS_HINTS: Record<LeadStatus, string> = {
+  NEW: "Ещё не звонили. Лид уже стоит в очереди звонков",
+  SEARCHING_DM: "Работа начата, но дозвониться пока не удалось",
+  FIRST_CONTACT: "Был хотя бы один звонок. Следующая цель — выйти на того, кто принимает решение",
+  DM_FOUND: "Нашли того, кто принимает решение. Дальше — выяснить потребность, бюджет или сроки",
+  QUALIFICATION: "Данных достаточно — можно передавать руководителю",
+  HANDED_TO_MANAGER: "Лид у руководителя, он ведёт переговоры",
+  NEGOTIATION: "Руководитель ведёт переговоры",
+  PROPOSAL_SENT: "Клиенту отправлено коммерческое предложение",
+  DEAL: "Клиент заплатил — сделка закрыта",
+  REJECTED: "Клиент отказался. Причина указана в карточке",
+  CALLBACK_LATER: "Клиент попросил перезвонить позже",
+};
+
 export const PRIORITY_LABELS: Record<Priority, string> = {
   LOW: "Низкий",
   MEDIUM: "Средний",

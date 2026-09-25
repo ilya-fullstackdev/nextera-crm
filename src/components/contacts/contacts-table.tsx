@@ -76,10 +76,10 @@ export function ContactsTable({ contacts, currentUserRole }: { contacts: Contact
       header: "Телефон",
       render: (c) =>
         c.phone ? (
-          <a href={`tel:${c.phone}`} onClick={stop} className="flex items-center gap-1.5 text-primary-600 hover:underline">
+          <span className="flex items-center gap-1.5 text-text-secondary">
             <Phone className="h-3.5 w-3.5" />
             {c.phone}
-          </a>
+          </span>
         ) : (
           "—"
         ),
@@ -191,9 +191,10 @@ export function ContactsTable({ contacts, currentUserRole }: { contacts: Contact
                 {(contact.phone || contact.telegram || contact.email) && (
                   <div className="mt-3 flex items-center gap-1 border-t border-border-subtle pt-2.5">
                     {contact.phone && (
-                      <a href={`tel:${contact.phone}`} onClick={stop} className="-m-2 rounded-md p-2 text-primary-600">
-                        <Phone className="h-4.5 w-4.5" />
-                      </a>
+                      <span onClick={stop} className="flex select-all items-center gap-1.5 text-[13px] text-text-secondary">
+                        <Phone className="h-4 w-4" />
+                        {contact.phone}
+                      </span>
                     )}
                     {contact.telegram && (
                       <a
